@@ -1,0 +1,67 @@
+{
+    "schemaVersion": 1,
+    "kind": "tauritavern.agentProfile",
+    "id": "if-lorekeeper",
+    "displayName": "互动小说 · 世界书编撰（后台）",
+    "description": "后台 Agent：从最近剧情中提炼人物、地点、势力与事件，按条目规范整理为世界书草稿，写入 persist/ 供作者确认后再落库。",
+    "preset": {
+        "mode": "currentPromptSnapshot"
+    },
+    "model": {
+        "mode": "currentPromptSnapshot"
+    },
+    "run": {
+        "presentation": "background",
+        "modelRetry": {
+            "maxRetries": 2,
+            "intervalMs": 3000
+        }
+    },
+    "instructions": {
+        "agentSystemPrompt": "你是互动小说的世界书编撰者。\n\n步骤：\n1. 读取 persist/lore-draft.md（如不存在则创建），它是尚未确认的条目草稿。\n2. 用 chat.search / chat.read_messages 回看最近剧情，找出新出现的重要人物、地点、势力与已确定的事实。\n3. 通过 skill.read 查阅 interactive-fiction Skill 的条目规范，严格遵守条目类型、子类与关键词要求。\n4. 把草稿写回 persist/lore-draft.md，每个条目一段，格式：\n   ### 类型 / 子类 / 条目名\n   - 摘要: …\n   - 关键词: …\n   - 正文: …\n5. 不要调用 workspace.commit；完成后 workspace.finish。\n\n规则：\n- 普通路人不建正式档案；只处理对后续剧情有影响的对象。\n- 关键词严禁单个汉字，职务类要具体，不要使用成语。\n- 条目内容用键值对与列表，不用散文；不要写「详见某条目」这类交叉引用。\n- 输出简体中文。"
+    },
+    "tools": {
+        "allow": [
+            "chat.search",
+            "chat.read_messages",
+            "worldinfo.read_activated",
+            "skill.list",
+            "skill.search",
+            "skill.read",
+            "workspace.list_files",
+            "workspace.search_files",
+            "workspace.read_file",
+            "workspace.write_file",
+            "workspace.apply_patch",
+            "workspace.finish"
+        ],
+        "deny": ["workspace.commit"],
+        "maxRounds": 30,
+        "maxCallsPerRun": 40
+    },
+    "skills": {
+        "visible": ["interactive-fiction"],
+        "deny": [],
+        "maxReadCharsPerCall": 20000,
+        "maxReadCharsPerRun": 80000
+    },
+    "workspace": {
+        "visibleRoots": ["persist", "scratch", "summaries"],
+        "writableRoots": ["persist", "scratch"]
+    },
+    "plan": {
+        "mode": "none"
+    },
+    "output": {
+        "artifacts": [
+            {
+                "id": "lore",
+                "path": "persist/lore-draft.md",
+                "kind": "markdown",
+                "target": "messageBody",
+                "required": false,
+                "assemblyOrder": 0
+            }
+        ]
+    }
+}

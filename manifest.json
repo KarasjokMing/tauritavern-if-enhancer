@@ -1,0 +1,13 @@
+{
+    "display_name": "互动小说增强系统 (IF Enhancer)",
+    "loading_order": 60,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "KarasjokMing",
+    "version": "1.1.0",
+    "homePage": "https://github.com/KarasjokMing/tauritavern-if-enhancer",
+    "auto_update": false,
+    "minimum_client_version": "1.13.0"
+}

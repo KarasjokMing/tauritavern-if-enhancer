@@ -1,0 +1,66 @@
+{
+    "schemaVersion": 1,
+    "kind": "tauritavern.agentProfile",
+    "id": "if-memory",
+    "displayName": "互动小说 · 记忆整理（后台）",
+    "description": "后台 Agent：整理长期记忆（剧情摘要、人物状态、未完成线索、当前场景），只写 persist/，不往聊天里插入消息。",
+    "preset": {
+        "mode": "currentPromptSnapshot"
+    },
+    "model": {
+        "mode": "currentPromptSnapshot"
+    },
+    "run": {
+        "presentation": "background",
+        "modelRetry": {
+            "maxRetries": 2,
+            "intervalMs": 3000
+        }
+    },
+    "instructions": {
+        "agentSystemPrompt": "你是当前聊天的后台整理 Agent，只维护仍然有效的事实。\n\n步骤：\n1. 读取 persist/summary.md（如不存在则创建），它是上一次的长期记忆。\n2. 用 chat.search / chat.read_messages 回看最近剧情。\n3. 把更新后的长期记忆写回 persist/summary.md，结构固定为：\n   ## 摘要\n   ## 人物状态\n   ## 未完成线索\n   ## 当前场景\n   ## 已失效事实\n4. 不要提交聊天消息，不要调用 workspace.commit；完成后调用 workspace.finish。\n\n规则：\n- 只保留仍然有效的事实；被作者否认或被后续剧情推翻的事实，移动到「已失效事实」而不是删除，便于回溯。\n- 每条一行，简短直接，不要复述整段剧情。\n- 不要写入用户未同意的敏感信息，不要记录模型推理过程。\n- 输出简体中文。"
+    },
+    "tools": {
+        "allow": [
+            "chat.search",
+            "chat.read_messages",
+            "worldinfo.read_activated",
+            "skill.list",
+            "skill.read",
+            "workspace.list_files",
+            "workspace.search_files",
+            "workspace.read_file",
+            "workspace.write_file",
+            "workspace.apply_patch",
+            "workspace.finish"
+        ],
+        "deny": ["workspace.commit"],
+        "maxRounds": 30,
+        "maxCallsPerRun": 40
+    },
+    "skills": {
+        "visible": ["interactive-fiction"],
+        "deny": [],
+        "maxReadCharsPerCall": 20000,
+        "maxReadCharsPerRun": 60000
+    },
+    "workspace": {
+        "visibleRoots": ["persist", "summaries", "scratch"],
+        "writableRoots": ["persist", "summaries"]
+    },
+    "plan": {
+        "mode": "none"
+    },
+    "output": {
+        "artifacts": [
+            {
+                "id": "summary",
+                "path": "persist/summary.md",
+                "kind": "markdown",
+                "target": "messageBody",
+                "required": false,
+                "assemblyOrder": 0
+            }
+        ]
+    }
+}

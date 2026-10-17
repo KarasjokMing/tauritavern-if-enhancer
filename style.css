@@ -1,0 +1,275 @@
+/* 互动小说增强系统 —— 界面样式
+   色彩变量按功能语义命名，便于随主题切换。 */
+
+#tt-if-dock {
+    --c-surface: color-mix(in srgb, var(--SmartThemeBlurTintColor, #1f1f24) 88%, transparent);
+    --c-border: var(--SmartThemeBorderColor, #3a3a44);
+    --c-text: var(--SmartThemeBodyColor, #e6e6ea);
+    --c-text-muted: color-mix(in srgb, var(--c-text) 62%, transparent);
+    --c-primary: var(--SmartThemeQuoteColor, #7aa2f7);
+    --c-accent: #d98a3a;
+    --c-danger: #e05a5a;
+    --c-success: #4fae72;
+
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    margin: 0 0 6px 0;
+    font-size: 0.92em;
+    color: var(--c-text);
+}
+
+#tt-if-dock:empty {
+    display: none;
+}
+
+/* ---------------------------------------------------------------- 模式切换 */
+
+.tt-if-mode-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    background: var(--c-surface);
+}
+
+.tt-if-mode-btn {
+    appearance: none;
+    border: 1px solid var(--c-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--c-text-muted);
+    padding: 5px 14px;
+    font-size: 0.95em;
+    line-height: 1.2;
+    cursor: pointer;
+    min-height: 30px;
+    transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.tt-if-mode-btn:hover {
+    border-color: var(--c-primary);
+    color: var(--c-text);
+}
+
+.tt-if-mode-btn.tt-if-active {
+    background: var(--c-primary);
+    border-color: var(--c-primary);
+    color: #10131a;
+    font-weight: 600;
+}
+
+.tt-if-mode-hint {
+    margin-left: auto;
+    color: var(--c-text-muted);
+    font-size: 0.82em;
+    padding-left: 6px;
+}
+
+/* 编辑模式下让输入区一眼可辨 */
+#send_form.tt-if-editing #send_textarea {
+    border-color: var(--c-accent) !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-accent) 45%, transparent);
+}
+
+body.tt-if-edit-mode #send_form.tt-if-editing::before {
+    content: '作者模式';
+    position: absolute;
+    transform: translateY(-1.15em);
+    font-size: 0.72em;
+    color: var(--c-accent);
+    letter-spacing: 0.08em;
+}
+
+/* ---------------------------------------------------------------- 执行结果 */
+
+.tt-if-receipts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 34vh;
+    overflow-y: auto;
+}
+
+.tt-if-receipts:empty {
+    display: none;
+}
+
+.tt-if-receipt {
+    border: 1px solid var(--c-border);
+    border-left-width: 3px;
+    border-radius: 6px;
+    background: var(--c-surface);
+    padding: 4px 8px;
+}
+
+.tt-if-receipt.tt-if-ok {
+    border-left-color: var(--c-success);
+}
+
+.tt-if-receipt.tt-if-err {
+    border-left-color: var(--c-danger);
+}
+
+.tt-if-receipt summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    list-style: none;
+}
+
+.tt-if-receipt summary::-webkit-details-marker {
+    display: none;
+}
+
+.tt-if-mark {
+    font-weight: 700;
+}
+
+.tt-if-ok .tt-if-mark {
+    color: var(--c-success);
+}
+
+.tt-if-err .tt-if-mark {
+    color: var(--c-danger);
+}
+
+.tt-if-title {
+    font-weight: 600;
+}
+
+.tt-if-tag {
+    margin-left: auto;
+    color: var(--c-text-muted);
+    font-size: 0.78em;
+}
+
+.tt-if-body {
+    padding: 4px 0 2px 18px;
+    color: var(--c-text-muted);
+    line-height: 1.5;
+}
+
+.tt-if-warn {
+    color: var(--c-accent);
+}
+
+.tt-if-detail {
+    max-height: 22vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 4px 0;
+    padding: 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--c-text) 8%, transparent);
+    font-size: 0.85em;
+}
+
+.tt-if-undo {
+    margin-top: 6px;
+}
+
+.tt-if-undone {
+    opacity: 0.6;
+}
+
+.tt-if-stage {
+    color: var(--c-primary);
+    padding: 2px 6px;
+    font-size: 0.85em;
+}
+
+/* ---------------------------------------------------------------- 设置面板 */
+
+.tt-if-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tt-if-panel h4 {
+    margin: 0;
+}
+
+.tt-if-panel h5 {
+    margin: 8px 0 2px 0;
+    border-bottom: 1px solid var(--c-border, #3a3a44);
+    padding-bottom: 2px;
+}
+
+.tt-if-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.tt-if-label {
+    flex: 1 1 60%;
+}
+
+.tt-if-field small {
+    flex: 1 1 100%;
+    opacity: 0.65;
+    font-size: 0.82em;
+}
+
+.tt-if-field input[type='text'] {
+    flex: 1 1 40%;
+    min-width: 120px;
+}
+
+.tt-if-field input[type='number'] {
+    width: 80px;
+}
+
+.tt-if-note {
+    opacity: 0.7;
+    font-size: 0.85em;
+    line-height: 1.5;
+}
+
+.tt-if-diag {
+    max-height: 16vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-size: 0.8em;
+    padding: 6px;
+    border-radius: 4px;
+    background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.tt-if-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.tt-if-action.tt-if-busy {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* 移动端：模式条占满一行，提示文字换行 */
+@media (max-width: 640px) {
+    .tt-if-mode-btn {
+        flex: 1 1 auto;
+        text-align: center;
+    }
+
+    .tt-if-mode-hint {
+        flex: 1 1 100%;
+        margin-left: 0;
+        padding-left: 0;
+    }
+
+    .tt-if-receipts {
+        max-height: 28vh;
+    }
+}
