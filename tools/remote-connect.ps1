@@ -15,6 +15,7 @@ param(
     [ValidateSet('none', 'tail', 'all')][string]$Log = 'none',
     [string]$Install = '',
     [ValidateSet('', 'on', 'off')][string]$Console = '',
+    [switch]$Restart,
     [string]$Package = 'com.tauritavern.client',
     [string]$Activity = 'com.tauritavern.client/.MainActivity'
 )
@@ -41,9 +42,10 @@ New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 Write-Host "adb = $adb"
 & $adb start-server | Out-Null
 & $adb connect $Address
-$devices = & $adb devices
-if ($devices -notmatch 'device$' -and $devices -notmatch 'device\s') {
+$deviceText = (& $adb devices) -join "`n"
+if ($deviceText -notmatch '(?m)^\S+\s+device\s*$') {
     Write-Warning '设备未就绪：请确认手机已开启无线调试，且地址端口正确。'
+    Write-Host $deviceText
 }
 
 function Restart-App {
@@ -65,6 +67,9 @@ if ($Install) {
     Write-Host '扩展已推送到手机。'
     Restart-App
 }
+
+# ---------------------------------------------------------------- 重启
+if ($Restart) { Restart-App }
 
 # ---------------------------------------------------------------- 控制台捕获
 if ($Console) {
