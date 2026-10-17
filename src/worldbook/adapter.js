@@ -119,7 +119,12 @@ export function renderBookName(template, extra = {}) {
         .trim();
 }
 
-/** 解析应当写入的世界书名称。 */
+/**
+ * 解析应当写入的世界书名称。
+ *
+ * 只解析、**不创建**：读记忆这类只读操作不应产生副作用（真机实测会在 worlds/ 里
+ * 留下一个空的世界书文件）。真正写入时由 writeEntries → ensureWorldbook 负责创建。
+ */
 export async function resolveTargetBook({ target, nameTemplate, autoCreate, primaryName } = {}) {
     const th = TH();
     const c = ctx();
@@ -133,19 +138,15 @@ export async function resolveTargetBook({ target, nameTemplate, autoCreate, prim
         const names = th?.getGlobalWorldbookNames?.() ?? [];
         if (names.length) return names[0];
     }
-    // 默认：聊天级世界书
+    // 默认：聊天级世界书。已经绑定就直接用；未绑定时返回候选名称，写入时再创建。
     if (th?.getChatWorldbookName) {
         const current = th.getChatWorldbookName('current');
         if (current) return current;
-        const wanted = renderBookName(nameTemplate);
-        if (autoCreate && th.getOrCreateChatWorldbook) {
-            return await th.getOrCreateChatWorldbook('current', wanted);
-        }
-        if (wanted) return wanted;
     }
+    const wanted = renderBookName(nameTemplate);
+    if (wanted && autoCreate !== false) return wanted;
     const bound = c?.characters?.[c.characterId]?.data?.extensions?.world;
     if (bound) return bound;
-    const wanted = renderBookName(nameTemplate);
     if (wanted) return wanted;
     throw new Error('无法确定目标世界书：请先在设置中选择或创建一个世界书');
 }

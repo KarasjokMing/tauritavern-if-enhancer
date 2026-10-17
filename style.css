@@ -97,10 +97,11 @@
     padding: 3px 6px;
     border: 1px solid var(--c-border);
     border-radius: 6px;
-    background: transparent;
+    background: color-mix(in srgb, var(--c-text) 10%, transparent);
     color: var(--c-text);
     font-size: 0.86em;
     min-height: 28px;
+    color-scheme: dark light;
 }
 
 /* 选中「更改配置」时给输入区换个颜色，提醒这条不会写进故事 */

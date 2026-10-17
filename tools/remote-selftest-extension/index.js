@@ -1,13 +1,37 @@
 /**
- * 临时自检扩展（第二轮）：验证资料类任务 —— 世界书写入与人物创建。
+ * 临时自检扩展（第六轮）：验证「演绎剧情 / 更改配置」分离与元回复拦截。
  *
- * 这一轮刻意在「没有打开聊天」的状态下运行，用来确认：
- *   1. 资料类任务不依赖聊天历史，能独立完成 LLM 生成与世界书落盘；
- *   2. 正文类任务在无聊天时被明确拦截，而不是静默丢失。
- *
- * 结果写入 extension_settings.tt_if_enhancer.selfTest5，用 adb 拉 settings.json 读取。
+ * 结果写入 extension_settings.tt_if_enhancer.selfTest6，用 adb 拉 settings.json 读取。
  */
-const WAIT_MS = 300;
+const report = { round: 6, at: new Date().toISOString(), steps: [] };
+
+const persist = () => {
+    try {
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        if (!ctx) return;
+        ctx.extensionSettings ??= {};
+        ctx.extensionSettings.tt_if_enhancer ??= {};
+        ctx.extensionSettings.tt_if_enhancer.selfTest6 = report;
+        ctx.saveSettingsDebounced?.();
+    } catch (error) {
+        console.error('[IF SelfTest6] 写入失败：', error);
+    }
+};
+
+const step = (name, value) => {
+    report.steps.push({ name, value });
+    persist();
+};
+
+const messageCount = () => {
+    try {
+        const th = globalThis.TavernHelper;
+        if (typeof th?.getChatMessages === 'function') return th.getChatMessages('all').length;
+    } catch {
+        /* 忽略 */
+    }
+    return -1;
+};
 
 const waitFor = async (predicate, timeoutMs) => {
     const start = Date.now();
@@ -17,39 +41,10 @@ const waitFor = async (predicate, timeoutMs) => {
         } catch {
             /* 忽略 */
         }
-        await new Promise(resolve => setTimeout(resolve, WAIT_MS));
+        await new Promise(resolve => setTimeout(resolve, 300));
     }
     return false;
 };
-
-const report = { round: 2, at: new Date().toISOString(), steps: [] };
-
-const persist = () => {
-    try {
-        const ctx = globalThis.SillyTavern?.getContext?.();
-        if (!ctx) return;
-        ctx.extensionSettings ??= {};
-        ctx.extensionSettings.tt_if_enhancer ??= {};
-        ctx.extensionSettings.tt_if_enhancer.selfTest5 = report;
-        ctx.saveSettingsDebounced?.();
-    } catch (error) {
-        console.error('[IF SelfTest2] 写入结果失败：', error);
-    }
-};
-
-const step = (name, value) => {
-    report.steps.push({ name, value });
-    persist();
-};
-
-const brief = result => ({
-    ok: result.ok,
-    title: result.title,
-    lines: result.lines,
-    warnings: (result.warnings ?? []).slice(0, 4),
-    route: result.route?.task,
-    detail: String(result.detail ?? '').slice(0, 300),
-});
 
 (async () => {
     try {
@@ -59,25 +54,37 @@ const brief = result => ({
             step('error', '等待 ttIfEnhancer 超时');
             return;
         }
-        step('diagnostics-before', (await api.diagnostics()).text);
-
         const before = api.settings();
         const originalBook = before.worldbook?.primaryName ?? '';
-        api.updateSettings({ worldbook: { primaryName: 'IF-Enhancer-自检' } });
-        step('target', 'IF-Enhancer-自检');
+        api.updateSettings({ worldbook: { primaryName: 'IF-Enhancer-自检' }, authorPreferences: [] });
+        step('start', { book: 'IF-Enhancer-自检', prefs: 0, messages: messageCount() });
 
-        const tasks = [
-            ['worldbook-write', '根据目前剧情整理坡子口和张婆的设定，写入世界书。'],
-            ['character-create', '创建一个合欢宗长老，女性，年约四十，修为金丹后期，性格比较严肃，其余自行发挥。'],
-            ['prose-without-chat', '继续演绎接下来的剧情。'],
+        const cases = [
+            ['a-forced-config', '推进速度设为快', 'config.adjust'],
+            ['b-forced-prose-on-config-text', '把世界卡进度推进设为快', 'prose.generate'],
+            ['c-auto-config', '每次回复短一点', 'auto'],
         ];
-        for (const [key, text] of tasks) {
+        for (const [key, text, taskType] of cases) {
+            const messagesBefore = messageCount();
             const started = Date.now();
-            const result = await api.runEditInstruction(text);
-            step(key, { ...brief(result), ms: Date.now() - started });
+            const result = await api.runEditInstruction(text, { taskType });
+            step(key, {
+                taskType,
+                route: result.route?.task,
+                method: result.route?.method,
+                ok: result.ok,
+                title: result.title,
+                lines: result.lines,
+                warnings: result.warnings,
+                messagesBefore,
+                messagesAfter: messageCount(),
+                prefs: (api.settings().authorPreferences ?? []).length,
+                detail: String(result.detail ?? '').slice(0, 300),
+                ms: Date.now() - started,
+            });
         }
 
-        step('diagnostics-after', (await api.diagnostics()).text);
+        step('final-prefs', (api.settings().authorPreferences ?? []).map(item => item.text));
         api.updateSettings({ worldbook: { primaryName: originalBook } });
         step('done', 'ok');
     } catch (error) {
