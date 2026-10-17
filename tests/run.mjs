@@ -17,7 +17,8 @@ import { buildEntries, normalizeGenerated, memoryEntriesFrom } from '../src/worl
 import { quickRoute, TASK } from '../src/core/router.js';
 import { parseJson, isProviderApiError } from '../src/core/llm.js';
 import { guessNameFromText } from '../src/core/edit.js';
-import { characterStructuredPrompt, CHARACTER_SCHEMA } from '../src/prompts.js';
+import { TASK_OPTIONS } from '../src/ui/toggle.js';
+import { characterStructuredPrompt, CHARACTER_SCHEMA, looksLikeMetaReply } from '../src/prompts.js';
 import { mergeDefaults, DEFAULTS } from '../src/config.js';
 
 const cases = [];
@@ -286,6 +287,53 @@ test('设置深合并：类型纠正与未知键忽略', () => {
     assert.equal(merged.memory.intervalTurns, 20);
     assert.equal(merged.enabled, DEFAULTS.enabled, '类型不匹配时不采纳');
     assert.equal(merged.未知键, undefined);
+});
+
+test('数组设置整体替换（作者偏好不能被默认值吃掉）', () => {
+    const merged = mergeDefaults(DEFAULTS, {
+        authorPreferences: [{ at: '2026-10-17', text: '推进速度设为快' }],
+    });
+    assert.equal(merged.authorPreferences.length, 1);
+    assert.equal(merged.authorPreferences[0].text, '推进速度设为快');
+    const kept = mergeDefaults(DEFAULTS, {});
+    assert.deepEqual(kept.authorPreferences, []);
+});
+
+/* ------------------------------------------------------------ 演绎剧情 / 更改配置 分离 */
+
+test('调整生成参数被识别为更改配置，而不是演绎剧情', () => {
+    assert.equal(quickRoute('把世界卡进度推进设为快').task, TASK.CONFIG_ADJUST);
+    assert.equal(quickRoute('节奏放慢一点').task, TASK.CONFIG_ADJUST);
+    assert.equal(quickRoute('每次回复短一些').task, TASK.CONFIG_ADJUST);
+    assert.equal(quickRoute('不要替主角做决定').task, TASK.CONFIG_ADJUST);
+    assert.equal(quickRoute('文风更冷一点').task, TASK.CONFIG_ADJUST);
+    assert.equal(quickRoute('多写点对话').task, TASK.CONFIG_ADJUST);
+});
+
+test('更改配置与世界书任务不会互相抢占', () => {
+    assert.equal(quickRoute('把世界书进度推进设为快').task, TASK.CONFIG_ADJUST);
+    assert.equal(quickRoute('把坡子口和张婆的设定整理进世界书').task, TASK.WORLDBOOK_WRITE);
+});
+
+test('元回复能被识别（真机实测：指令被当成正文时模型回了说明）', () => {
+    assert.equal(
+        looksLikeMetaReply('你给的指令是"把世界卡进度推进设为快"，但这个故事的世界卡、人物档案和当前进度还没有发过来。'),
+        true,
+    );
+    assert.equal(looksLikeMetaReply('请补充一下主角是谁、在哪个世界。'), true);
+    assert.equal(looksLikeMetaReply('我手里没有可推进的起点。'), true);
+    const realProse = '云压得极低，像一口倒扣的铁锅闷住了整个村子。蝉忽然全哑了，紧接着豆大的雨点砸下来。';
+    assert.equal(looksLikeMetaReply(realProse), false);
+    assert.equal(looksLikeMetaReply('x'.repeat(800)), false, '长文本不判为元回复');
+});
+
+test('界面任务类型选项与任务常量一致', () => {
+    const keys = TASK_OPTIONS.map(([key]) => key);
+    assert.ok(keys.includes('auto'));
+    assert.ok(keys.includes(TASK.PROSE_GENERATE));
+    assert.ok(keys.includes(TASK.CONFIG_ADJUST));
+    assert.equal(new Set(keys).size, keys.length, '任务类型不重复');
+    assert.equal(keys[0], 'auto', '默认为自动判断');
 });
 
 /* ------------------------------------------------------------ 结构化输出解析 */

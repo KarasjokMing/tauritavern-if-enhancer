@@ -70,6 +70,54 @@
     padding-left: 6px;
 }
 
+/* 编辑模式：显式任务类型选择器 */
+.tt-if-task-row {
+    display: flex;
+    flex: 1 1 100%;
+    align-items: center;
+    gap: 6px;
+    padding-top: 4px;
+    border-top: 1px dashed var(--c-border);
+    margin-top: 2px;
+}
+
+.tt-if-task-row.tt-if-hidden {
+    display: none;
+}
+
+.tt-if-task-label {
+    color: var(--c-text-muted);
+    font-size: 0.82em;
+    white-space: nowrap;
+}
+
+.tt-if-task-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 3px 6px;
+    border: 1px solid var(--c-border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--c-text);
+    font-size: 0.86em;
+    min-height: 28px;
+}
+
+/* 选中「更改配置」时给输入区换个颜色，提醒这条不会写进故事 */
+#send_form.tt-if-task-config #send_textarea {
+    border-color: var(--c-primary) !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-primary) 45%, transparent);
+}
+
+.tt-if-instruction {
+    color: var(--c-text);
+    background: color-mix(in srgb, var(--c-primary) 14%, transparent);
+    border-radius: 4px;
+    padding: 3px 6px;
+    margin-bottom: 4px;
+    word-break: break-word;
+}
+
 /* 编辑模式下让输入区一眼可辨 */
 #send_form.tt-if-editing #send_textarea {
     border-color: var(--c-accent) !important;

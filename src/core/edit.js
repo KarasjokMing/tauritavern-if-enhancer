@@ -7,9 +7,9 @@
  *
  * 用户不需要知道内部流程，也不需要任何特殊关键词。
  */
-import { settings } from '../config.js';
+import { settings, updateSettings } from '../config.js';
 import { toast } from '../env.js';
-import { routeInstruction, TASK, TASK_LABEL } from './router.js';
+import { routeInstruction, quickRoute, TASK, TASK_LABEL } from './router.js';
 import { generateText, generateObject, stripFence } from './llm.js';
 import { getMessages, renderHistory, appendMessages, replaceMessage, findLastMessage, currentCharName } from './chat.js';
 import { readMemory, summarize, applyCorrection, memoryContextText, resolveMemoryBook } from './memory.js';
@@ -24,6 +24,7 @@ import {
     worldbookPrompt,
     WORLDBOOK_ENTRY_SCHEMA,
     performancePrompt,
+    looksLikeMetaReply,
 } from '../prompts.js';
 import { buildEntries, describeWrite } from '../worldbook/builder.js';
 import { writeEntries, readWorldbook, resolveTargetBook } from '../worldbook/adapter.js';
@@ -76,6 +77,20 @@ async function handleProseGenerate(route, stage) {
     });
     const text = stripFence(raw).trim();
     if (!text) throw new Error('模型没有返回正文内容');
+    if (looksLikeMetaReply(text)) {
+        return receipt({
+            ok: false,
+            task: route.task,
+            label: TASK_LABEL[route.task],
+            title: '模型回了一段说明，没有写成正文（未写入聊天）',
+            lines: [
+                '这次输出看起来是在向作者解释或索要资料，不是故事内容，因此没有写进聊天记录。',
+                '补充场景与在场人物后重试；若你本意是调整生成方式，请把任务类型选为「更改配置」。',
+            ],
+            detail: text,
+            warnings: [text.slice(0, 160)],
+        });
+    }
     await appendMessages({ role: 'assistant', name: currentCharName() || '旁白', message: text });
     return receipt({
         task: route.task,
@@ -97,6 +112,17 @@ async function handleProseRevise(route, stage) {
     });
     const text = stripFence(raw).trim();
     if (!text) throw new Error('模型没有返回修订后的正文');
+    if (looksLikeMetaReply(text)) {
+        return receipt({
+            ok: false,
+            task: route.task,
+            label: TASK_LABEL[route.task],
+            title: '模型回了一段说明，原回复未被改动',
+            lines: ['这次输出看起来是在向作者解释，不是修订后的正文，因此没有覆盖原回复。'],
+            detail: text,
+            warnings: [text.slice(0, 160)],
+        });
+    }
     await replaceMessage(target.message_id, text);
     const lines = [`已修订第 ${target.message_id + 1} 条回复（${original.length} → ${text.length} 字）`];
     const warnings = [];
@@ -330,6 +356,72 @@ async function handleCharacterUpdate(route, stage) {
     });
 }
 
+/* ------------------------------------------------------------ 配置类任务 */
+
+export const PREFERENCE_ENTRY = '作者偏好';
+
+/**
+ * 调整运行参数 / 写作偏好。
+ * 这类指令**不产生正文**：记录到扩展设置（立即作用于对话模式注入），
+ * 同时写进世界书的「扮演准则」条目，随生成上下文长期生效。
+ */
+async function handleConfigAdjust(route, stage) {
+    stage?.('正在记录作者偏好…');
+    const directive = String(route.instruction ?? '').trim();
+    if (!directive) throw new Error('没有可记录的偏好内容');
+
+    const list = [...(settings().authorPreferences ?? []), { at: new Date().toISOString(), text: directive }].slice(-20);
+    updateSettings({ authorPreferences: list });
+    const content = ['作者偏好与运行约束:', ...list.map(item => `- ${item.text}`)].join('\n');
+
+    const lines = [`已记录第 ${list.length} 条偏好，立即作用于后续生成`];
+    const warnings = [];
+    try {
+        const book = await currentBook();
+        const entries = buildEntries([
+            {
+                type: '扮演准则',
+                part: '',
+                name: PREFERENCE_ENTRY,
+                abstract: '作者对生成方式与叙述手法的偏好',
+                content,
+                keywords: [],
+                constant: true,
+                enabled: true,
+            },
+        ], { strictDashes: settings().lint.strictDashes });
+        const result = await writeEntries(book, entries.entries, { mode: 'upsert' });
+        lines.unshift(describeWrite(book, result, entries.lint));
+        warnings.push(...entries.lint.warnings.map(item => `${item.where}：${item.message}`));
+    } catch (error) {
+        warnings.push(`偏好已记录，但没能写入世界书：${error?.message ?? error}`);
+    }
+
+    return receipt({
+        task: TASK.CONFIG_ADJUST,
+        label: TASK_LABEL[TASK.CONFIG_ADJUST],
+        title: '已更改配置',
+        lines,
+        detail: content.slice(0, 600),
+        warnings,
+    });
+}
+
+/** 无法判断意图时不再猜，改为明确询问（避免把指令当成正文写进故事）。 */
+async function handleUnknown(route, stage) {
+    return receipt({
+        ok: false,
+        task: TASK.UNKNOWN,
+        label: TASK_LABEL[TASK.UNKNOWN],
+        title: '没能判断这条指令要做什么',
+        lines: [
+            '没有把它当成正文处理，聊天记录未改动。',
+            '可以在输入框上方把「任务」选成具体类型后重发，或换一种说法。',
+        ],
+        detail: route.instruction ?? '',
+    });
+}
+
 function lintBlocked(lint) {
     const config = settings();
     return config.lint.enabled && config.lint.blockOnError && lint.errors.length > 0;
@@ -405,30 +497,76 @@ const HANDLERS = {
     [TASK.CHARACTER_UPDATE]: handleCharacterUpdate,
     [TASK.WORLDBOOK_WRITE]: handleWorldbookWrite,
     [TASK.MEMORY_SUMMARIZE]: handleMemorySummarize,
+    [TASK.CONFIG_ADJUST]: handleConfigAdjust,
+    [TASK.UNKNOWN]: handleUnknown,
 };
+
+/** 用户显式指定的任务类型：直接构造路由结果，完全不经过分类器。 */
+function forcedRoute(task, text) {
+    const quick = quickRoute(text);
+    return {
+        task,
+        scope: task === TASK.CHARACTER_UPDATE ? (quick.scope === 'none' ? 'unknown' : quick.scope) : 'none',
+        entities: quick.entities,
+        target_hint: quick.target_hint,
+        needs_fact_fix: quick.needs_fact_fix,
+        instruction: text,
+        confidence: 1,
+        method: 'forced',
+    };
+}
+
+/** 作者指令记入聊天（隐藏消息，可见但不进入模型上下文）。 */
+async function logInstructionToChat(text, task) {
+    if (!['chat', 'both'].includes(settings().edit.logInstruction)) return;
+    try {
+        await appendMessages([
+            {
+                role: 'system',
+                is_hidden: true,
+                name: '✏️ 作者指令',
+                message: `【作者指令 · ${TASK_LABEL[task] ?? task}】\n${text}`,
+            },
+        ]);
+    } catch (error) {
+        console.warn('[IF Enhancer] 作者指令未能记入聊天：', error?.message ?? error);
+    }
+}
 
 /**
  * 执行一条编辑指令。
  * @param {string} text 作者输入
- * @param {{stage?: (text: string) => void, route?: object}} options
+ * @param {{stage?: (t: string) => void, route?: object, taskType?: string}} options
+ *        taskType 为用户在界面上显式选择的类型（'auto' 表示交给分类器）
  */
-export async function runEditInstruction(text, { stage, route: presetRoute } = {}) {
+export async function runEditInstruction(text, { stage, route: presetRoute, taskType = 'auto' } = {}) {
     const value = String(text ?? '').trim();
-    if (!value) return receipt({ ok: false, title: '指令为空', lines: ['请输入要对故事、人物、世界或系统做的修改。'] });
+    if (!value) {
+        return receipt({ ok: false, instruction: '', title: '指令为空', lines: ['请输入要对故事、人物、世界或系统做的修改。'] });
+    }
     try {
-        const route = presetRoute ?? (await routeInstruction(value));
-        stage?.(`识别为「${TASK_LABEL[route.task] ?? route.task}」…`);
-        const handler = HANDLERS[route.task] ?? handleProseGenerate;
+        let route;
+        if (presetRoute) {
+            route = presetRoute;
+        } else if (taskType && taskType !== 'auto') {
+            // 用户在界面上指定了类型：直接按它处理，分类器不参与。
+            route = forcedRoute(taskType, value);
+        } else {
+            route = await routeInstruction(value);
+            // 自动判断且连模型都没能定性时，不再默认当正文——先问清楚，避免污染故事。
+            if (route.method === 'heuristic' && route.confidence < 0.5) {
+                const unknown = await handleUnknown(route, stage);
+                return { ...unknown, route, instruction: value };
+            }
+        }
+        stage?.(`按「${TASK_LABEL[route.task] ?? route.task}」处理…`);
+        if (route.task !== TASK.UNKNOWN) await logInstructionToChat(value, route.task);
+        const handler = HANDLERS[route.task] ?? handleUnknown;
         const result = await handler(route, stage);
-        return { ...result, route };
+        return { ...result, route, instruction: value };
     } catch (error) {
         const message = error?.message ?? String(error);
-        return receipt({
-            ok: false,
-            title: '编辑指令执行失败',
-            lines: [message],
-            warnings: [message],
-        });
+        return receipt({ ok: false, title: '编辑指令执行失败', lines: [message], warnings: [message], instruction: value });
     }
 }
 

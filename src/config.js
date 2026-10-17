@@ -10,6 +10,8 @@ export const DEFAULTS = {
     defaultMode: 'dialogue',
     lastMode: 'dialogue',
     rememberMode: true,
+    /** 作者用编辑模式下达的运行偏好，按时间顺序累积（同时写进世界书「作者偏好」条目）。 */
+    authorPreferences: [],
     dialogue: {
         injectRules: true,
         injectSceneState: true,
@@ -17,7 +19,10 @@ export const DEFAULTS = {
         depth: 1,
     },
     edit: {
+        taskType: 'auto', // auto | prose.generate | prose.revise | config.adjust | character.* | worldbook.write | memory.summarize
         receipt: 'bar', // bar | message | both | off
+        showInstruction: true,
+        logInstruction: 'bar', // bar | chat | both —— 作者指令是否也写进聊天（隐藏消息）
         historyMessages: 24,
         autoApplyWorldbook: true,
         confirmBeforeRevise: true,
@@ -53,9 +58,12 @@ function isPlainObject(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** 深合并：只用 defaults 里存在的键，避免历史脏字段回流。 */
+/** 深合并：只用 defaults 里存在的键，避免历史脏字段回流。数组整体替换。 */
 export function mergeDefaults(defaults, incoming) {
-    const out = Array.isArray(defaults) ? [...defaults] : { ...defaults };
+    if (Array.isArray(defaults)) {
+        return Array.isArray(incoming) ? [...incoming] : [...defaults];
+    }
+    const out = { ...defaults };
     if (!isPlainObject(incoming)) return out;
     for (const [key, value] of Object.entries(defaults)) {
         const got = incoming[key];

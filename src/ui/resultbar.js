@@ -46,7 +46,9 @@ export function pushReceipt(result) {
     const ok = result?.ok !== false;
     const item = document.createElement('details');
     item.className = `tt-if-receipt ${ok ? 'tt-if-ok' : 'tt-if-err'}`;
-    item.open = false;
+    // 最新一条默认展开：作者指令与执行结果都要一眼可见，避免"我发的内容不见了"。
+    item.open = true;
+    if (result?.instruction) item.title = result.instruction;
 
     const summary = document.createElement('summary');
     const mark = document.createElement('span');
@@ -66,6 +68,14 @@ export function pushReceipt(result) {
 
     const body = document.createElement('div');
     body.className = 'tt-if-body';
+    // 作者指令本身：编辑模式下它不会成为聊天消息，因此必须在这里显示出来，
+    // 否则用户会以为"我发的内容丢了"。
+    if (result?.instruction && settings().edit.showInstruction) {
+        const row = document.createElement('div');
+        row.className = 'tt-if-instruction';
+        row.textContent = `✏️ 作者指令：${result.instruction}`;
+        body.append(row);
+    }
     for (const line of result?.lines ?? []) {
         const row = document.createElement('div');
         row.textContent = line;
@@ -102,6 +112,10 @@ export function pushReceipt(result) {
         body.append(undo);
     }
     item.append(body);
+    // 只保留最新一条展开，历史回执收起。
+    host.querySelectorAll('.tt-if-receipt[open]').forEach(element => {
+        element.open = false;
+    });
     host.prepend(item);
 
     while (host.querySelectorAll('.tt-if-receipt').length > MAX_ITEMS) {

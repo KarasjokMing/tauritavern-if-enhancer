@@ -35,10 +35,14 @@ export const ROUTER_SYSTEM = `你是互动小说系统的任务分类器。用�
 - character.update：修改人物设定或当前表现。例如"柳如烟不要那么冷漠，应该更善于伪装"。
 - worldbook.write：把设定整理/收录进世界书。例如"根据目前剧情整理坡子口和张婆的设定，写入世界书""收录张婆"。
 - memory.summarize：整理剧情、总结事件、检查矛盾。例如"把目前已经发生的主要事件总结一下"。
+- config.adjust：调整运行参数或写作偏好，而不是写正文。例如"把世界卡进度推进设为快""节奏放慢一点"
+  "每次回复短一些""文风更冷""不要替主角做决定""多写点对话"。这类指令应当被记录下来并作用于后续生成，
+  **绝不能**当作正文要求去演绎。
 - unknown：无法判断。
 
 关键区分：
 - 要求"改正文/改这一段"→ prose.revise；要求"改人物卡/人物设定"→ character.update。
+- 只要是在调整"怎么生成"（速度、节奏、篇幅、文风、尺度、是否替主角决定），一律 config.adjust。
 - prose.revise 里若作者否定了某个已确立的事实（如"坡子口不存在大量修仙高手"），still 是 prose.revise，
   但 needs_fact_fix 必须为 true，表示这条事实已在记忆或世界书中被记录，需要一并纠正。
 - 只描述人物"当前表现"（这一场怎么演）→ character.update 且 scope="performance"；
@@ -52,7 +56,7 @@ export const ROUTER_SCHEMA = {
         properties: {
             task: {
                 type: 'string',
-                enum: ['prose.generate', 'prose.revise', 'character.create', 'character.update', 'worldbook.write', 'memory.summarize', 'unknown'],
+                enum: ['prose.generate', 'prose.revise', 'character.create', 'character.update', 'worldbook.write', 'memory.summarize', 'config.adjust', 'unknown'],
             },
             scope: { type: 'string', enum: ['performance', 'setting', 'none'] },
             entities: { type: 'array', items: { type: 'string' }, description: '指令涉及的人物/地点/势力名' },
@@ -73,7 +77,30 @@ export const PROSE_GENERATE = `你是互动小说的叙事执行者。作者给�
 - 保持既有设定、人物档案、世界书与长期记忆一致。
 - 用对话、动作与环境细节承载信息，避免总结式旁白与提纲式罗列。
 - 不要替主角作出重大决定；主角的行动只按作者明确给出的内容执行。
-- 只输出故事正文本身，不要输出解释、标题、编号或元信息。`;
+- 只输出故事正文本身，不要输出解释、标题、编号或元信息。
+- 你是故事的叙事者，不是助手：不要向作者提问、不要索要资料、不要说明你的困难。`;
+
+/**
+ * 判断模型返回的是"故事正文"还是"对作者的元回复"。
+ * 真机实测：把"把世界卡进度推进设为快"误判为正文任务时，模型回了一段
+ * "你给的指令是…我手里没有可推进的起点…"，这段元回复被当成正文写进了聊天。
+ */
+const META_REPLY_PATTERNS = [
+    /你(给|提供)的?(指令|要求|信息|资料)/u,
+    /(请|麻烦)(补充|提供|贴|发)(一下)?/u,
+    /我(手里|这边|手上)(没有|缺少)/u,
+    /我(需要|缺少|没有)(更多|足够|任何)?(的)?(信息|上下文|剧情|资料|设定|起点)/u,
+    /无法(凭空|继续|开始)(演绎|创作|推进)?/u,
+    /作为(一个)?(AI|助手|语言模型)/u,
+    /^(好的|明白|收到)[，,。!！]?\s*(我(会|将|来)|下面)/u,
+];
+
+export function looksLikeMetaReply(text) {
+    const value = String(text ?? '').trim();
+    if (!value) return false;
+    if (value.length > 600) return false;
+    return META_REPLY_PATTERNS.some(pattern => pattern.test(value));
+}
 
 /** 编辑模式：正文修订。 */
 export function proseRevisePrompt({ original, instruction }) {

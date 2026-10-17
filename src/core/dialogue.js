@@ -29,20 +29,31 @@ function performanceBlock() {
     return `【本场表现调整（临时，不改档案）】\n${perf.text}`;
 }
 
+/** 作者用编辑模式下达的运行偏好（推进速度、节奏、篇幅、文风、尺度等）。 */
+function preferenceBlock() {
+    const list = settings().authorPreferences ?? [];
+    if (!list.length) return '';
+    return `【作者偏好与运行约束】\n${list.map(item => `- ${item.text}`).join('\n')}`;
+}
+
 /** 组装注入文本。 */
 export async function buildDialogueText() {
     const config = settings();
-    if (!config.dialogue.injectRules) return performanceBlock();
-    const parts = [DIALOGUE_RULES];
-    if (config.dialogue.injectSceneState) {
-        try {
-            const memory = await readMemory();
-            const text = memoryContextText(memory);
-            if (text) parts.push(`【故事当前状态】\n${text}`);
-        } catch {
-            /* 记忆不可读时忽略 */
+    const parts = [];
+    if (config.dialogue.injectRules) {
+        parts.push(DIALOGUE_RULES);
+        if (config.dialogue.injectSceneState) {
+            try {
+                const memory = await readMemory();
+                const text = memoryContextText(memory);
+                if (text) parts.push(`【故事当前状态】\n${text}`);
+            } catch {
+                /* 记忆不可读时忽略 */
+            }
         }
     }
+    const prefs = preferenceBlock();
+    if (prefs) parts.push(prefs);
     const perf = performanceBlock();
     if (perf) parts.push(perf);
     return parts.join('\n\n');

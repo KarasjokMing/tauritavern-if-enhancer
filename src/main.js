@@ -5,7 +5,7 @@
  */
 import { settings, updateSettings } from './config.js';
 import { evt, onEvent, toast, waitForHost, saveSettings, rawSettings, isTT, hasTH } from './env.js';
-import { MODE, initMode, mode, mountToggle, paintMode } from './ui/toggle.js';
+import { MODE, initMode, mode, mountToggle, paintMode, taskType } from './ui/toggle.js';
 import { mountPanel } from './ui/panel.js';
 import { clearReceipts, pushReceipt, setStage } from './ui/resultbar.js';
 import { clearDialogueInjection, refreshDialogueInjection } from './core/dialogue.js';
@@ -51,12 +51,12 @@ async function handleEditInput() {
     clearInput();
     setStage('正在理解指令…');
     try {
-        const result = await runEditInstruction(text, { stage: setStage });
+        const result = await runEditInstruction(text, { stage: setStage, taskType: taskType() });
         setStage('');
         pushReceipt(result);
     } catch (error) {
         setStage('');
-        pushReceipt({ ok: false, title: '编辑指令执行失败', lines: [error?.message ?? String(error)] });
+        pushReceipt({ ok: false, title: '编辑指令执行失败', lines: [error?.message ?? String(error)], instruction: text });
     }
     await refreshDialogueInjection(mode() === MODE.DIALOGUE);
 }
@@ -169,6 +169,14 @@ export function recordDiagnostics(extra = {}) {
         sendForm: Boolean(document.querySelector('#send_form')),
         textarea: Boolean(document.querySelector('#send_textarea')),
         viewport: `${window.innerWidth}x${window.innerHeight}`,
+        taskType: (() => {
+            try {
+                return taskType();
+            } catch {
+                return 'n/a';
+            }
+        })(),
+        preferences: (settings().authorPreferences ?? []).length,
         ...capabilities(),
         backend: detectBackend(),
         ...extra,

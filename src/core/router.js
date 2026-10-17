@@ -12,6 +12,7 @@ export const TASK = {
     CHARACTER_UPDATE: 'character.update',
     WORLDBOOK_WRITE: 'worldbook.write',
     MEMORY_SUMMARIZE: 'memory.summarize',
+    CONFIG_ADJUST: 'config.adjust',
     UNKNOWN: 'unknown',
 };
 
@@ -22,10 +23,25 @@ export const TASK_LABEL = {
     'character.update': '修改人物',
     'worldbook.write': '世界书操作',
     'memory.summarize': '整理记忆',
+    'config.adjust': '记录作者偏好',
     unknown: '未识别',
 };
 
 const RULES = [
+    {
+        // 调整运行参数/写作偏好，而不是写正文。必须排在 PROSE_GENERATE 之前判定。
+        task: TASK.CONFIG_ADJUST,
+        weight: 4,
+        patterns: [
+            /(世界卡|世界书|系统|生成|运行|推进|剧情)(的)?(进度|速度|节奏|参数|开关|设置|选项|尺度)/u,
+            /(设为|改成|调整为|切换为|调成|打开|关闭).{0,8}(快|慢|高|低|开|关|模式|档)/u,
+            /(节奏|语速|文风|语气|篇幅|字数|长度|回复长度|描写密度|尺度|露骨程度|风格).{0,8}(放?[快慢长短多少轻重冷热硬软淡浓细粗]|调整|改变|改成|设为|加大|减少|收紧|放开|精简|详细)/u,
+            /(回复|每次|每条|正文|段落|篇幅|字数).{0,8}(短|长|少|多|精简|详细|简短)/u,
+            /(多|少)(写|来|给)点?(对话|动作|心理|环境|旁白|描写|细节)/u,
+            /(不要|别)(再)?(替|帮)(我|主角)(决定|做决定|选择)/u,
+            /(推进|节奏)(快|慢)(一)?(点|些)?$/u,
+        ],
+    },
     {
         task: TASK.MEMORY_SUMMARIZE,
         weight: 3,
@@ -80,7 +96,7 @@ function scoreText(text) {
         if (rule.boost && rule.boost.some(pattern => pattern.test(text))) score += 1;
         scores.set(rule.task, (scores.get(rule.task) ?? 0) + score);
     }
-    const explicit = /世界书|条目|收录|建档|档案/u.test(text);
+    const explicit = !scores.has(TASK.CONFIG_ADJUST) && /世界书|条目|收录|建档|档案/u.test(text);
     const prose = /(正文|这一段|刚才那段|上一段|演绎|剧情)/u.test(text);
     if (explicit && !prose) return { task: TASK.WORLDBOOK_WRITE, score: 4 };
     const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);

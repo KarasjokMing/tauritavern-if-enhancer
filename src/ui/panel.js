@@ -145,6 +145,23 @@ export function mountPanel() {
 
     box.append(el('h5', { textContent: '编辑模式' }));
     box.append(
+        select('「这条按什么处理」默认值', 'edit.taskType', {
+            auto: '自动判断',
+            'prose.generate': '✏️ 演绎剧情（写新正文）',
+            'config.adjust': '⚙️ 更改配置（生成参数/偏好）',
+            'prose.revise': '✏️ 修改正文（改已有回复）',
+            'character.create': '👤 创建人物',
+        }, '这只是默认值；输入框上方随时可以改。'),
+    );
+    box.append(
+        select('作者指令是否记入聊天', 'edit.logInstruction', {
+            bar: '只显示在回执里（推荐）',
+            chat: '记为隐藏消息（可见，但不进入模型上下文）',
+            both: '两者都要',
+        }),
+    );
+    box.append(checkbox('在回执里显示作者指令', 'edit.showInstruction'));
+    box.append(
         select('执行结果展示方式', 'edit.receipt', {
             bar: '只显示在输入框上方',
             message: '只弹出提示',
@@ -201,6 +218,20 @@ export function mountPanel() {
                     lines: result.ok ? [`新增 ${result.result.created} 条，更新 ${result.result.updated} 条`] : [result.reason],
                     detail: result.memory?.summary ?? '',
                 });
+            }),
+            action('查看作者偏好', async () => {
+                const list = settings().authorPreferences ?? [];
+                pushReceipt({
+                    ok: true,
+                    title: `作者偏好：${list.length} 条`,
+                    lines: list.length ? ['这些偏好会注入对话模式，并写入世界书「作者偏好」条目'] : ['还没有记录任何偏好'],
+                    detail: list.map((item, index) => `${index + 1}. ${item.text}`).join('\n'),
+                });
+            }),
+            action('清空作者偏好', async () => {
+                setSetting('authorPreferences', []);
+                await refreshDialogueInjection();
+                pushReceipt({ ok: true, title: '已清空作者偏好', lines: ['世界书里的「作者偏好」条目需要你手动删除或覆盖'] });
             }),
             action('重新尝试结构化输出', async () => {
                 resetSchemaCapability();
