@@ -4,7 +4,7 @@
     "name": "互动小说增强系统（引导器）",
     "id": "tt-if-enhancer-bootstrap",
     "content": "/* 互动小说增强系统 —— 酒馆助手引导器\n * 作用：把扩展本体注入到真正的酒馆页面（父页面），而不是脚本 iframe 内，\n * 这样模式切换按钮、输入框接管与世界书写入都作用于真实界面。\n * 扩展本体由 jsdelivr 提供，推送后自动跟随更新（缓存约 12 小时）。\n */\n(() => {\n    const SRC = 'https://testingcf.jsdelivr.net/gh/KarasjokMing/tauritavern-if-enhancer@main/index.js';\n    const doc = (window.parent && window.parent.document) || document;\n    if (doc.getElementById('tt-if-enhancer-loader')) {\n        console.log('[IF Enhancer] 引导器已注入，跳过重复加载。');\n        return;\n    }\n    const script = doc.createElement('script');\n    script.id = 'tt-if-enhancer-loader';\n    script.type = 'module';\n    script.src = SRC;\n    script.onerror = () => console.error('[IF Enhancer] 扩展本体加载失败，请检查网络或改用扩展安装方式。');\n    doc.body.appendChild(script);\n    console.log('[IF Enhancer] 已请求加载扩展本体：' + SRC);\n})();",
-    "info": "## 互动小说增强系统 · 引导器\n\n这是**引导器脚本**，只负责把扩展本体加载进酒馆页面。\n\n- 扩展本体：https://github.com/KarasjokMing/tauritavern-if-enhancer\n- 需要已安装并启用**酒馆助手**（生成通路与结构化输出依赖它）。\n- 加载成功后，输入框上方会出现「💬 对话 ｜ ✏️ 编辑」切换条。\n- 若没有出现，打开浏览器控制台查看 `[IF Enhancer]` 日志。\n- 本引导器不执行任何本地文件操作，也不修改聊天记录。",
+    "info": "## 互动小说增强系统 · 引导器\n\n这是**引导器脚本**，只负责把扩展本体加载进酒馆页面。\n\n- 扩展本体：https://github.com/KarasjokMing/tauritavern-if-enhancer\n- 需要已安装并启用**酒馆助手**（生成通路与结构化输出依赖它）。\n- 加载成功后，输入框上方会出现「💬 对话 ｜ ✏️ 编辑」切换条。\n- 若没有出现，打开浏览器控制台查看 `[IF Enhancer]` 日志。\n- 本引导器不执行任何本地文件操作，也不修改聊天记录。\n- 更新说明：引导器按 `@main` 拉取，CDN 缓存最长约 7 天（未指定版本号时）。\n  需要立刻生效可在 https://www.jsdelivr.com/tools/purge 提交 `cdn.jsdelivr.net` 形式的链接刷新。",
     "button": {
         "enabled": false,
         "buttons": []
