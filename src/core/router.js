@@ -12,6 +12,7 @@ export const TASK = {
     CHARACTER_UPDATE: 'character.update',
     WORLDBOOK_WRITE: 'worldbook.write',
     MEMORY_SUMMARIZE: 'memory.summarize',
+    IMAGE_GENERATE: 'image.generate',
     CONFIG_ADJUST: 'config.adjust',
     UNKNOWN: 'unknown',
 };
@@ -23,11 +24,18 @@ export const TASK_LABEL = {
     'character.update': '修改人物',
     'worldbook.write': '世界书操作',
     'memory.summarize': '整理记忆',
+    'image.generate': '生成配图',
     'config.adjust': '记录作者偏好',
     unknown: '未识别',
 };
 
 const RULES = [
+    {
+        // 配图：由扩展自己写提示词，作者不需要写 prompt。
+        task: TASK.IMAGE_GENERATE,
+        weight: 4,
+        patterns: [/(配图|插图|插画|画一张|画个|生成图|出图|生成图片|配一张图|来张图|来一张图|画出来)/u],
+    },
     {
         // 调整运行参数/写作偏好，而不是写正文。必须排在 PROSE_GENERATE 之前判定。
         task: TASK.CONFIG_ADJUST,

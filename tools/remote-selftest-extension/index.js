@@ -1,9 +1,12 @@
 /**
- * 临时自检扩展（第六轮）：验证「演绎剧情 / 更改配置」分离与元回复拦截。
+ * 临时自检扩展（第八轮）：验证反重力「经酒馆后端」写配图提示词。
  *
- * 结果写入 extension_settings.tt_if_enhancer.selfTest6，用 adb 拉 settings.json 读取。
+ * 第七轮已证明：页面直连中继被 CORS 拦（Failed to fetch），出图链路本身正常。
+ * 这一轮验证后端通路，并对比两个通道的耗时与产出。
+ *
+ * 结果写入 extension_settings.tt_if_enhancer.selfTest9。
  */
-const report = { round: 6, at: new Date().toISOString(), steps: [] };
+const report = { round: 8, at: new Date().toISOString(), steps: [] };
 
 const persist = () => {
     try {
@@ -11,81 +14,68 @@ const persist = () => {
         if (!ctx) return;
         ctx.extensionSettings ??= {};
         ctx.extensionSettings.tt_if_enhancer ??= {};
-        ctx.extensionSettings.tt_if_enhancer.selfTest6 = report;
+        ctx.extensionSettings.tt_if_enhancer.selfTest9 = report;
         ctx.saveSettingsDebounced?.();
     } catch (error) {
-        console.error('[IF SelfTest6] 写入失败：', error);
+        console.error('[IF SelfTest8] 写入失败：', error);
     }
 };
-
 const step = (name, value) => {
     report.steps.push({ name, value });
     persist();
 };
 
-const messageCount = () => {
-    try {
-        const th = globalThis.TavernHelper;
-        if (typeof th?.getChatMessages === 'function') return th.getChatMessages('all').length;
-    } catch {
-        /* 忽略 */
-    }
-    return -1;
-};
-
-const waitFor = async (predicate, timeoutMs) => {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-        try {
-            if (predicate()) return true;
-        } catch {
-            /* 忽略 */
-        }
-        await new Promise(resolve => setTimeout(resolve, 300));
-    }
-    return false;
-};
-
 (async () => {
     try {
-        const ready = await waitFor(() => globalThis.ttIfEnhancer, 90000);
-        const api = globalThis.ttIfEnhancer;
-        if (!ready || !api) {
-            step('error', '等待 ttIfEnhancer 超时');
-            return;
-        }
-        const before = api.settings();
-        const originalBook = before.worldbook?.primaryName ?? '';
-        api.updateSettings({ worldbook: { primaryName: 'IF-Enhancer-自检' }, authorPreferences: [] });
-        step('start', { book: 'IF-Enhancer-自检', prefs: 0, messages: messageCount() });
-
-        const cases = [
-            ['a-forced-config', '推进速度设为快', 'config.adjust'],
-            ['b-forced-prose-on-config-text', '把世界卡进度推进设为快', 'prose.generate'],
-            ['c-auto-config', '每次回复短一点', 'auto'],
-        ];
-        for (const [key, text, taskType] of cases) {
-            const messagesBefore = messageCount();
+        const ctx = globalThis.SillyTavern?.getContext?.();
+        // 先直接打后端接口，看清返回形状
+        try {
             const started = Date.now();
-            const result = await api.runEditInstruction(text, { taskType });
-            step(key, {
-                taskType,
-                route: result.route?.task,
-                method: result.route?.method,
-                ok: result.ok,
-                title: result.title,
-                lines: result.lines,
-                warnings: result.warnings,
-                messagesBefore,
-                messagesAfter: messageCount(),
-                prefs: (api.settings().authorPreferences ?? []).length,
-                detail: String(result.detail ?? '').slice(0, 300),
-                ms: Date.now() - started,
+            const response = await fetch('/api/backends/chat-completions/generate', {
+                method: 'POST',
+                headers: ctx.getRequestHeaders(),
+                body: JSON.stringify({
+                    chat_completion_source: 'custom',
+                    custom_url: 'http://192.168.31.226:8046/v1',
+                    custom_include_headers: 'Authorization: Bearer local-gateway\n',
+                    custom_include_body: '',
+                    custom_exclude_body: '',
+                    custom_prompt_post_processing: 'none',
+                    model: 'gemini-3.8-flash',
+                    messages: [{ role: 'user', content: '只回复四个字：后端通路正常' }],
+                    max_tokens: 64,
+                    temperature: 0.5,
+                    stream: false,
+                }),
             });
+            const text = await response.text();
+            step('backend-raw', { status: response.status, ms: Date.now() - started, body: text.slice(0, 300) });
+        } catch (error) {
+            step('backend-raw', { error: String(error?.message ?? error) });
         }
 
-        step('final-prefs', (api.settings().authorPreferences ?? []).map(item => item.text));
-        api.updateSettings({ worldbook: { primaryName: originalBook } });
+        // 再走插件的完整提示词撰写（promptChannel=relay）
+        const api = globalThis.ttIfEnhancer;
+        if (api) api.updateSettings({ image: { promptChannel: 'relay' } });
+        try {
+            const mod = await import('/scripts/extensions/third-party/tauritavern-if-enhancer/src/core/image.js');
+            const started = Date.now();
+            const parsed = await mod.deriveImagePrompt({
+                recent: '深夜的书房里，合欢宗长老裴守真把一叠契书拍在桌上，铜秤在指间转了半圈。窗外雨声很密，烛火晃了一下。',
+                memory: { scene: '合欢宗 · 戒律堂书房', characters: ['裴守真：正在核账'] },
+            });
+            step('derive-relay', {
+                ms: Date.now() - started,
+                hasPrompt: Boolean(parsed?.prompt),
+                prompt: String(parsed?.prompt ?? '').slice(0, 260),
+                style: String(parsed?.style ?? '').slice(0, 120),
+            });
+        } catch (error) {
+            step('derive-relay', { error: String(error?.message ?? error) });
+        }
+
+        // 还原为默认通道
+        if (api) api.updateSettings({ image: { promptChannel: 'relay' } });
         step('done', 'ok');
     } catch (error) {
         step('error', String(error?.message ?? error));

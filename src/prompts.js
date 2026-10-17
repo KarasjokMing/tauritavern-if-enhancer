@@ -70,6 +70,34 @@ export const ROUTER_SCHEMA = {
     },
 };
 
+/** 自动配图：由扩展自己写提示词，作者不需要写任何 prompt。 */
+export const IMAGE_PROMPT_SYSTEM = `你是互动小说的插画提示词作者。根据剧情写一条可直接送进 Stable Diffusion / ComfyUI 的提示词。
+
+规则：
+- prompt 用英文逗号分隔的短语描述画面：人物（外观特征、发型、服装、表情、动作）、环境、光线、构图、镜头。
+- 人物外观优先采用「人物外貌锚点」里已确立的特征，保持前后一致；锚点没写的才由你补，且要克制。
+- 只画当前这一瞬的场景，不要画多格分镜，不要出现文字、字幕、水印、对话框、UI。
+- 不要在 prompt 里写人物名字（模型不认识），把名字换成外观描述。
+- negative 用英文写要避免的内容（低质量、多余手指、文字水印等）。
+- style 用英文写一句整体画风建议（如 anime style, soft lighting）。
+- 先把画面想清楚再写；不要输出解释，只输出 JSON。`;
+
+export const IMAGE_PROMPT_SCHEMA = {
+    name: 'if_image_prompt',
+    description: '插画提示词',
+    value: {
+        type: 'object',
+        properties: {
+            prompt: { type: 'string', description: '英文 SD 提示词（逗号分隔短语）' },
+            negative: { type: 'string', description: '英文负面提示词' },
+            style: { type: 'string', description: '英文画风建议' },
+            scene_summary: { type: 'string', description: '一句话中文说明这张画的内容' },
+        },
+        required: ['prompt', 'negative', 'style', 'scene_summary'],
+        additionalProperties: false,
+    },
+};
+
 /** 编辑模式：正文演绎（生成新剧情）。 */
 export const PROSE_GENERATE = `你是互动小说的叙事执行者。作者给出了剧情要求，请把它演绎为连贯的人物互动与场景推进，而不是机械复述。
 

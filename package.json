@@ -1,6 +1,6 @@
 {
     "name": "tauritavern-if-enhancer",
-    "version": "1.1.2",
+    "version": "1.2.0",
     "private": true,
     "type": "module",
     "description": "TauriTavern 互动小说增强系统：对话／编辑双模式 + 世界书读写 + 长期记忆同步",

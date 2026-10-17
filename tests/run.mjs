@@ -18,6 +18,7 @@ import { quickRoute, TASK } from '../src/core/router.js';
 import { parseJson, isProviderApiError } from '../src/core/llm.js';
 import { guessNameFromText } from '../src/core/edit.js';
 import { TASK_OPTIONS } from '../src/ui/toggle.js';
+import { sanitizeForSlash, composePrompt, composeNegative } from '../src/core/image.js';
 import { characterStructuredPrompt, CHARACTER_SCHEMA, looksLikeMetaReply } from '../src/prompts.js';
 import { mergeDefaults, DEFAULTS } from '../src/config.js';
 
@@ -332,8 +333,34 @@ test('界面任务类型选项与任务常量一致', () => {
     assert.ok(keys.includes('auto'));
     assert.ok(keys.includes(TASK.PROSE_GENERATE));
     assert.ok(keys.includes(TASK.CONFIG_ADJUST));
+    assert.ok(keys.includes(TASK.IMAGE_GENERATE));
     assert.equal(new Set(keys).size, keys.length, '任务类型不重复');
     assert.equal(keys[0], 'auto', '默认为自动判断');
+});
+
+/* ------------------------------------------------------------ 自动配图 */
+
+test('配图提示词清理 STscript 敏感字符', () => {
+    assert.equal(sanitizeForSlash('a|b{c}d\\e"f'), 'a b c d e f');
+    assert.equal(sanitizeForSlash('多行\n提示词   带空格'), '多行 提示词 带空格');
+});
+
+test('配图提示词组装：模型 prompt + 画风 + 固定后缀，且去重', () => {
+    const prompt = composePrompt({ prompt: '1girl, rain, village gate', style: 'anime style' }, 'anime style, cinematic lighting');
+    assert.equal(prompt, '1girl, rain, village gate, anime style, cinematic lighting');
+    assert.equal(composePrompt({ prompt: '' }, ''), '');
+});
+
+test('负面提示词合并去重', () => {
+    assert.equal(composeNegative({ negative: 'lowres, bad hands' }, 'lowres'), 'lowres, bad hands');
+    assert.equal(composeNegative({}, 'text, watermark'), 'text, watermark');
+});
+
+test('“配图”类说法被识别为生成配图任务', () => {
+    assert.equal(quickRoute('配图').task, TASK.IMAGE_GENERATE);
+    assert.equal(quickRoute('画一张雨中的村口').task, TASK.IMAGE_GENERATE);
+    assert.equal(quickRoute('生成图片').task, TASK.IMAGE_GENERATE);
+    assert.equal(quickRoute('来张图').task, TASK.IMAGE_GENERATE);
 });
 
 /* ------------------------------------------------------------ 结构化输出解析 */

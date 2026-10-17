@@ -1,5 +1,41 @@
 # 更新记录
 
+## V1.2.0 — 自动配图（提示词由扩展自己写）+ 反重力可用
+
+### 自动配图：作者不用写任何提示词
+- 新增任务类型 **🖼 生成配图（自动写提示词）**：发一句「配图」就行，扩展会读当前场景与最近剧情，
+  自己写出英文 SD 提示词并出图。
+- 新增设置组「自动配图」：启用开关、出图时机（只在我说配图 / 每隔 N 条回复自动出一张）、
+  写提示词的通道、固定画风后缀、固定负面词、是否存相册、提示词最大长度等。
+- 提示词生成时会**参考世界书里的人物外貌锚点**，保证同一人物前后长相一致。
+- 出图走酒馆自带的图像扩展：`/imagine` 斜杠命令（`quiet`/`gallery`/`negative` 参数），
+  因此 ComfyUI、云端 SD 等后端都能直接用。
+
+### 反重力（Antigravity）可用
+- 真机实测：页面里直接 `fetch` 跨域中继会被 **CORS 拦掉（Failed to fetch）**。
+  改为**经酒馆自己的 chat-completions 后端出网**（`custom` 源 + `custom_url`），实测 HTTP 200 / 7 秒。
+- 提示词通道可选「反重力中继」或「当前聊天模型」；反重力不可用时自动回退，不中断出图。
+- 实测产出示例（11.5 秒）：
+  `1man, handsome mature cultivator, sharp piercing eyes, stern expression, long straight black hair
+  partially bound with a jade hairpin, wearing layered dark crimson and ink-black traditional silk robes…`
+  + `Cinematic dark Xianxia anime illustration, dramatic chiaroscuro candlelight`。
+
+### 真机验证（TauriTavern / Android）
+| 验证项 | 结果 |
+| --- | --- |
+| 出图链路 | 手机 → 酒馆图像扩展 → ComfyUI 代理(8188) → **ComfyUI 返回 success 并落盘 PNG** |
+| 提示词（聊天模型） | 从一段剧情写出完整 SD 提示词（人物外观/环境/光线/构图/镜头） |
+| 提示词（反重力） | 经后端出网成功，11.5 秒 |
+| 模块可达性 | 扩展模块可被页面动态 import（便于远程排障） |
+
+### 已知边界
+- ComfyUI 需在电脑上运行；手机通过中继地址 `http://<电脑IP>:8188` 访问（只对该手机 IP 开放）。
+- 「只出图、不贴进聊天」时，图片只留在 ComfyUI 的输出目录，酒馆里看不到；一般保持关闭。
+- 反重力免费额度会限流：实测 `gemini-3.1-pro` 系列与 `gemini-3.6/3.7-flash` 返回 429，
+  改用 `gemini-3.8-flash`、`gemini-3.5-flash-lite`、`claude-sonnet-4-6` 正常。
+
+单元测试 40 → 44 项。
+
 ## V1.1.2 — 演绎剧情与更改配置分开
 
 真机使用反馈暴露了一个路由问题：在编辑模式输入「把世界卡进度推进设为快」，

@@ -45,6 +45,22 @@ export const DEFAULTS = {
         blockOnError: false,
         strictDashes: true,
     },
+    /** 自动配图：插件自己按剧情写提示词，作者不需要写 prompt。 */
+    image: {
+        enabled: false,
+        auto: 'off', // off | interval
+        intervalReplies: 6,
+        promptChannel: 'relay', // relay | chat
+        relayUrl: 'http://192.168.31.226:8046/v1',
+        relayModel: 'gemini-3.8-flash',
+        relayKey: 'local-gateway',
+        styleSuffix: '',
+        negative: '',
+        gallery: true,
+        quiet: false,
+        includeCharacterSheets: true,
+        maxPromptChars: 600,
+    },
     agent: {
         enabled: true,
         profileAuthor: 'if-author',

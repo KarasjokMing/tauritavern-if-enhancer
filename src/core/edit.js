@@ -14,6 +14,7 @@ import { generateText, generateObject, stripFence } from './llm.js';
 import { getMessages, renderHistory, appendMessages, replaceMessage, findLastMessage, currentCharName } from './chat.js';
 import { readMemory, summarize, applyCorrection, memoryContextText, resolveMemoryBook } from './memory.js';
 import { refreshDialogueInjection, setPerformanceGuidance } from './dialogue.js';
+import { generateSceneImage } from './image.js';
 import {
     PROSE_GENERATE,
     proseRevisePrompt,
@@ -356,6 +357,25 @@ async function handleCharacterUpdate(route, stage) {
     });
 }
 
+/* ------------------------------------------------------------ 配图 */
+
+async function handleImageGenerate(route, stage) {
+    const result = await generateSceneImage({ stage });
+    const lines = [];
+    if (result.summary) lines.push(`画面：${result.summary}`);
+    lines.push(`提示词：${result.prompt.slice(0, 120)}${result.prompt.length > 120 ? '…' : ''}`);
+    if (result.ok && settings().image.quiet) lines.push('已按设置只出图、不贴进聊天');
+    return receipt({
+        ok: result.ok,
+        task: TASK.IMAGE_GENERATE,
+        label: TASK_LABEL[TASK.IMAGE_GENERATE],
+        title: result.ok ? '已生成配图（提示词由扩展自动撰写）' : '配图未生成',
+        lines,
+        detail: result.detail,
+        warnings: result.warnings,
+    });
+}
+
 /* ------------------------------------------------------------ 配置类任务 */
 
 export const PREFERENCE_ENTRY = '作者偏好';
@@ -497,6 +517,7 @@ const HANDLERS = {
     [TASK.CHARACTER_UPDATE]: handleCharacterUpdate,
     [TASK.WORLDBOOK_WRITE]: handleWorldbookWrite,
     [TASK.MEMORY_SUMMARIZE]: handleMemorySummarize,
+    [TASK.IMAGE_GENERATE]: handleImageGenerate,
     [TASK.CONFIG_ADJUST]: handleConfigAdjust,
     [TASK.UNKNOWN]: handleUnknown,
 };

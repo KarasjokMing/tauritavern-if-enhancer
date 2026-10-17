@@ -195,6 +195,32 @@ export function mountPanel() {
     box.append(number('间隔回复条数', 'memory.intervalTurns', { min: 2, max: 100 }));
     box.append(text('记忆专用世界书（留空则用写入目标）', 'memory.book'));
 
+    box.append(el('h5', { textContent: '自动配图（提示词由扩展自己写）' }));
+    box.append(checkbox('启用配图功能', 'image.enabled'));
+    box.append(
+        select('出图时机', 'image.auto', {
+            off: '只在我说「配图」时出图',
+            interval: '每隔若干条回复自动出一张',
+        }),
+    );
+    box.append(number('自动出图间隔（回复条数）', 'image.intervalReplies', { min: 2, max: 60 }));
+    box.append(
+        select('谁来写提示词', 'image.promptChannel', {
+            relay: '反重力中继（经酒馆后端出网，写画面更细）',
+            chat: '当前聊天模型',
+        }, '反重力不可用时会自动改用当前聊天模型。'),
+    );
+    box.append(text('反重力中继地址', 'image.relayUrl'));
+    box.append(text('反重力模型', 'image.relayModel'));
+    box.append(text('固定画风后缀（可留空）', 'image.styleSuffix', '例如 anime style, cinematic lighting'));
+    box.append(text('固定负面词（可留空）', 'image.negative'));
+    box.append(
+        checkbox('只出图、不贴进聊天', 'image.quiet', '开启后图片只保存在 ComfyUI 的输出目录，酒馆里不会出现；一般保持关闭'),
+    );
+    box.append(checkbox('存到角色相册', 'image.gallery'));
+    box.append(checkbox('参考世界书里的人物外貌锚点', 'image.includeCharacterSheets'));
+    box.append(number('提示词最大长度', 'image.maxPromptChars', { min: 80, max: 900 }));
+
     box.append(el('h5', { textContent: 'TauriTavern Agent（实验性）' }));
     box.append(checkbox('允许使用 TT Agent 通路', 'agent.enabled'));
     box.append(text('作者 Profile ID', 'agent.profileAuthor'));
@@ -218,6 +244,12 @@ export function mountPanel() {
                     lines: result.ok ? [`新增 ${result.result.created} 条，更新 ${result.result.updated} 条`] : [result.reason],
                     detail: result.memory?.summary ?? '',
                 });
+            }),
+            action('试生成一张配图', async () => {
+                setStage('正在按当前剧情写配图提示词…');
+                const result = await runEditInstruction('配图', { taskType: 'image.generate', stage: setStage });
+                setStage('');
+                pushReceipt(result);
             }),
             action('查看作者偏好', async () => {
                 const list = settings().authorPreferences ?? [];

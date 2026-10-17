@@ -10,6 +10,7 @@ import { mountPanel } from './ui/panel.js';
 import { clearReceipts, pushReceipt, setStage } from './ui/resultbar.js';
 import { clearDialogueInjection, refreshDialogueInjection } from './core/dialogue.js';
 import { maybeAutoMemory, runEditInstruction } from './core/edit.js';
+import { maybeAutoImage } from './core/image.js';
 import { isBusy, capabilities, capabilitiesText } from './core/llm.js';
 import { detectBackend, backendLabel, readWorldbook, resolveTargetBook } from './worldbook/adapter.js';
 import { readMemory } from './core/memory.js';
@@ -109,6 +110,8 @@ function wireEvents() {
         if (mode() !== MODE.DIALOGUE) return;
         const turn = turnCounter();
         await maybeAutoMemory(turn);
+        // 自动配图：提示词由扩展按剧情撰写，作者不需要输入任何内容。
+        await maybeAutoImage(turn, { onStage: setStage, onResult: pushReceipt });
     };
     onEvent(evt('CHARACTER_MESSAGE_RECEIVED'), onReply);
     onEvent(evt('MESSAGE_RECEIVED'), onReply);
@@ -177,6 +180,9 @@ export function recordDiagnostics(extra = {}) {
             }
         })(),
         preferences: (settings().authorPreferences ?? []).length,
+        imageEnabled: Boolean(settings().image?.enabled),
+        imageAuto: settings().image?.auto ?? 'off',
+        imageChannel: settings().image?.promptChannel ?? 'relay',
         ...capabilities(),
         backend: detectBackend(),
         ...extra,

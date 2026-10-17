@@ -72,7 +72,63 @@
 
 ---
 
-## 4. 手机端远程自检（adb 无线调试）
+## 4. 手机端：反重力与图像后端
+
+手机上的酒馆要能用「反重力」与「出图」，需要电脑侧的服务 + 手机侧的配置。
+
+### 4.1 反重力（Antigravity）
+
+电脑侧两个进程：
+
+| 端口 | 作用 |
+| --- | --- |
+| `127.0.0.1:8045` | Antigravity Tools 本机的 OpenAI 兼容服务 |
+| `8046`（回环 + 局域网） | `mobile-antigravity-relay`：只接受手机 IP 的请求，转发到 8045 |
+| `8188`（局域网） | 同一个中继里的 ComfyUI 代理，只接受手机 IP |
+
+> 中继脚本：`50_Tools_Products/mobile-antigravity-relay/relay.mjs`，手机 IP 写在 `lan-addresses.json`。
+
+健康检查（从手机发起，能通才说明链路对）：
+
+```bash
+curl http://<电脑IP>:8046/health     # {"relay":true,"upstreamReady":true,...}
+```
+
+手机侧：酒馆 → 连接配置，选一个指向 `http://<电脑IP>:8046/v1` 的配置（`api` 选 `custom`）。
+**不要把地址写成 `127.0.0.1`**，那是手机自己。
+
+免费额度会限流，实测（2026-10）可用与不可用：
+
+| 状态 | 模型 |
+| --- | --- |
+| 可用 | `gemini-3.8-flash`、`gemini-3.8-flash-high/low/medium/tiered`、`gemini-3.5-flash-lite`、`claude-sonnet-4-6` |
+| 429 配额耗尽 | `gemini-3.1-pro`、`gemini-3.1-pro-high/low`、`gemini-3.6-flash`、`gemini-3.7-flash`、`gemini-pro-agent` |
+
+### 4.2 图像生成（ComfyUI）
+
+手机侧：酒馆 → 图像生成（Stable Diffusion 扩展）→ 后端选 ComfyUI → 地址填
+`http://<电脑IP>:8188`（即中继的代理端口），工作流用默认的 `Default_Comfy_Workflow.json`。
+
+电脑侧的 ComfyUI 由中继启动，配置在同目录 `comfy-service.json`（`--listen 127.0.0.1`，
+不直接对外暴露；手机只能经中继访问）。
+
+验证：
+
+```bash
+curl http://<电脑IP>:8188/system_stats   # 返回 ComfyUI 版本即通
+```
+
+### 4.3 插件里的自动配图
+
+- 「🖼 生成配图」任务会自己写提示词；写提示词的通道选「反重力中继」时，
+  请求会**经酒馆自己的后端出网**（页面直接 fetch 跨域中继会被 CORS 拦掉，实测 `Failed to fetch`）。
+- 出图走酒馆图像扩展的 `/imagine` 命令：`quiet`（是否贴进聊天）、`gallery`（是否存角色相册）、
+  `negative`（负面词）。
+- **「只出图不贴进聊天」时图片只留在 ComfyUI 的输出目录**，酒馆里看不到 —— 一般保持关闭。
+
+---
+
+## 5. 手机端远程自检（adb 无线调试）
 
 手机上没有开发者工具，因此本扩展把排障信息写进**可被 adb 读取的文件**。
 
@@ -171,7 +227,7 @@ adb shell am start -n com.tauritavern.client/.MainActivity
 
 ---
 
-## 5. Tailscale 与真机调试（可选）
+## 6. Tailscale 与真机调试（可选）
 
 Tailscale 只负责让电脑与手机在同一个 Tailnet 内互通，
 **不等于**能直接操作安卓上酒馆的内部数据。三条链路要分别验证：
@@ -207,7 +263,7 @@ adb logcat -v time | grep -iE "IF Enhancer|chromium.*console"
 
 ---
 
-## 6. 常见问题
+## 7. 常见问题
 
 | 现象 | 原因与处理 |
 | --- | --- |
