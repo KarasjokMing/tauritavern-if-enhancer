@@ -25,11 +25,11 @@ function scanPhrases(text, phrases, level, code, where, message) {
     return found.length ? [issue(level, code, where, `${message}：${found.join('、')}`)] : [];
 }
 
-/** 关键词校验。 */
-export function lintKeywords(keys = [], { type = '', name = '' } = {}) {
+/** 关键词校验。常驻条目不需要关键词，因此不报"没有关键词"。 */
+export function lintKeywords(keys = [], { type = '', name = '', constant = false } = {}) {
     const issues = [];
     const list = keys.filter(key => typeof key === 'string' && key.trim() !== '');
-    if (!list.length) {
+    if (!list.length && !constant) {
         issues.push(issue('error', 'KW_EMPTY', name, '条目没有任何关键词，将永远不会被触发', '补充能精确命中该条目的词组，或改为常驻条目'));
     }
     for (const key of list) {
@@ -134,7 +134,7 @@ export function lintEntry(entry, { allEntries = [], strictDashes = true } = {}) 
     if (Number(entry.probability) < 0 || Number(entry.probability) > 100) {
         issues.push(issue('error', 'PROBABILITY_RANGE', where, 'probability 必须在 0-100 之间'));
     }
-    issues.push(...lintKeywords(entry.keys ?? [], { type: entry.type, name: entry.name }));
+    issues.push(...lintKeywords(entry.keys ?? [], { type: entry.type, name: entry.name, constant: entry.constant }));
     issues.push(...lintContent(entry, { strictDashes }));
 
     const duplicates = (entry.keys ?? []).filter(key =>

@@ -179,6 +179,21 @@ test('既非常驻又无关键词是错误', () => {
     assert.ok(issues.some(item => item.code === 'NO_TRIGGER' && item.level === 'error'));
 });
 
+test('常驻条目没有关键词不算错误（记忆条目即如此）', () => {
+    const issues = lintEntry({
+        name: '[记忆] 剧情摘要',
+        type: '时间线',
+        part: 'plot',
+        content: '摘要:\n  - 主角来到坡子口催租。',
+        keys: [],
+        constant: true,
+        position: 'at_depth',
+        depth: 0,
+    });
+    assert.equal(issues.filter(item => item.level === 'error').length, 0, issues.map(item => item.message).join(' / '));
+    assert.ok(!issues.some(item => item.code === 'KW_EMPTY'));
+});
+
 test('整本校验能发现重名条目', () => {
     const result = lintBook([
         { name: '同名', type: 'NPC', content: '甲，负责开门。', keys: ['门房甲'], constant: false },
