@@ -66,42 +66,83 @@ export function findLastMessage(role = 'assistant', { skipHidden = true } = {}) 
     return null;
 }
 
-/** 追加消息。 */
-export async function appendMessages(messages) {
+/** 当前聊天的消息条数（用于写入后回读校验）。 */
+export function messageCount() {
     const th = TH();
+    if (typeof th?.getLastMessageId === 'function') {
+        try {
+            return Number(th.getLastMessageId()) + 1;
+        } catch {
+            /* 落到下面的数组长度 */
+        }
+    }
+    return Array.isArray(ctx()?.chat) ? ctx().chat.length : 0;
+}
+
+/**
+ * 是否已经打开了一个聊天。
+ * 注意：SillyTavern 的 ctx().chatId 在"重启后未打开聊天"时可能仍是旧值，
+ * 因此这里只做宽松判断，真正的保证是写入后的回读校验（见 appendMessages）。
+ */
+export function hasOpenChat() {
+    const c = ctx();
+    if (!c) return false;
+    if (messageCount() > 0) return true;
+    return Boolean(c.chatId) && Array.isArray(c.chat);
+}
+
+function assertChatOpen() {
+    if (hasOpenChat()) return;
+    throw new Error('当前没有打开任何聊天：请先在酒馆里打开一个角色聊天，再使用编辑模式。');
+}
+
+/** 追加消息。写入后回读校验，避免"看起来成功但消息没进聊天"的静默丢失。 */
+export async function appendMessages(messages) {
+    assertChatOpen();
     const payload = Array.isArray(messages) ? messages : [messages];
+    const before = messageCount();
+    const th = TH();
     if (th?.createChatMessages) {
         await th.createChatMessages(payload, { insert_before: 'end', refresh: 'all' });
-        return;
+    } else {
+        const c = ctx();
+        for (const item of payload) {
+            c.chat.push({
+                name: item.name ?? (item.role === 'user' ? c.name1 : c.name2),
+                is_user: item.role === 'user',
+                is_system: item.role === 'system',
+                is_hidden: Boolean(item.is_hidden),
+                mes: item.message,
+                extra: item.data ?? {},
+            });
+        }
+        await c.saveChat?.();
+        await c.reloadCurrentChat?.();
     }
-    const c = ctx();
-    for (const item of payload) {
-        c.chat.push({
-            name: item.name ?? (item.role === 'user' ? c.name1 : c.name2),
-            is_user: item.role === 'user',
-            is_system: item.role === 'system',
-            is_hidden: Boolean(item.is_hidden),
-            mes: item.message,
-            extra: item.data ?? {},
-        });
+    if (messageCount() <= before) {
+        throw new Error('消息没有写入当前聊天：请先在酒馆里打开一个聊天，再使用编辑模式。');
     }
-    await c.saveChat?.();
-    await c.reloadCurrentChat?.();
 }
 
 /** 覆盖已有消息。 */
 export async function replaceMessage(messageId, text, { refresh = 'all' } = {}) {
+    assertChatOpen();
     const th = TH();
     if (th?.setChatMessages) {
         await th.setChatMessages([{ message_id: messageId, message: text }], { refresh });
-        return true;
+    } else {
+        const c = ctx();
+        const target = c.chat?.[messageId];
+        if (!target) return false;
+        target.mes = text;
+        await c.saveChat?.();
+        await c.reloadCurrentChat?.();
     }
-    const c = ctx();
-    const target = c.chat?.[messageId];
-    if (!target) return false;
-    target.mes = text;
-    await c.saveChat?.();
-    await c.reloadCurrentChat?.();
+    // 软校验：酒馆的正则替换可能改写显示文本，因此只告警不失败。
+    const stored = ctx()?.chat?.[messageId]?.mes;
+    if (typeof stored === 'string' && stored !== String(text)) {
+        console.warn('[IF Enhancer] 覆盖后回读内容不一致，可能被酒馆正则或显示层改写。');
+    }
     return true;
 }
 

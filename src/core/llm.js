@@ -5,7 +5,7 @@
  *   B. TauriTavern Agent API（实验性，走 Profile + 工作区）
  *   C. 都没有 → 抛出可读错误，绝不静默假装成功
  */
-import { TT, TH, ctx, sleep } from '../env.js';
+import { TT, TH, ctx, rawSettings, saveSettings, sleep } from '../env.js';
 
 let running = 0;
 
@@ -30,6 +30,7 @@ export function capabilities() {
         generateRaw: typeof th?.generateRaw === 'function',
         generate: typeof th?.generate === 'function',
         jsonSchema: typeof th?.generate === 'function',
+        jsonSchemaDegraded: schemaUnsupportedKnown(),
         agent: Boolean(tt?.api?.agent?.startRunFromLegacyGenerate),
         nativeSlash: typeof ctx()?.executeSlashCommandsWithOptions === 'function',
     };
@@ -40,7 +41,11 @@ export function capabilitiesText() {
     return [
         caps.tavernHelper ? '酒馆助手 ✓' : '酒馆助手 ✗',
         caps.generateRaw ? '文本生成 ✓' : caps.nativeSlash ? '文本生成 △（/genraw 回退）' : '文本生成 ✗',
-        caps.jsonSchema ? '结构化输出 ✓' : '结构化输出 ✗',
+        caps.jsonSchemaDegraded
+            ? '结构化输出 △（供应商不支持，已降级为文本+修复）'
+            : caps.jsonSchema
+              ? '结构化输出 ✓'
+              : '结构化输出 ✗',
         caps.agent ? 'TT Agent ✓' : 'TT Agent ✗',
     ].join(' · ');
 }
@@ -89,7 +94,8 @@ export function parseJson(text, { fallback = null } = {}) {
         }
     }
     if (fallback !== null) return fallback;
-    throw new Error(`无法解析模型返回的结构化结果：${String(text).slice(0, 120)}…`);
+    const preview = String(text ?? '').replace(/\s+/g, ' ').slice(0, 300);
+    throw new Error(`模型没有按要求返回结构化结果（收到的内容：${preview}${String(text ?? '').length > 300 ? '…' : ''}）`);
 }
 
 /**
@@ -137,42 +143,154 @@ export async function generateText(params) {
             return typeof result === 'string' ? result : String(result?.content ?? '');
         }
         const result = await th.generate({
-            user_input: body,
+            user_input: system ? `${system}\n\n${body}` : body,
             should_stream: false,
             should_silence: silent,
-            overrides: system ? { char_description: system } : undefined,
         });
         return typeof result === 'string' ? result : String(result?.content ?? '');
     });
 }
 
+const JSON_RULES = [
+    '输出格式要求（必须严格遵守）：',
+    '1. 只输出一个 JSON 对象：不要输出解释、说明、标题、问候或 Markdown 代码块；',
+    '2. 第一个字符必须是 {，最后一个字符必须是 }；',
+    '3. 字段名与取值类型必须符合给定的 JSON Schema，不要新增或遗漏字段；',
+    '4. 内容不确定时用空字符串或空数组表示，不要写"待确认"之类的占位文字。',
+].join('\n');
+
 /**
- * 生成结构化对象（json_schema）。
- * 不支持结构化输出时退回纯文本 + 容错解析。
+ * 供应商可能不支持结构化输出。
+ * 真机实测：DeepSeek 返回 `[API 错误] This response_format type is unavailable now`，
+ * 而且这条错误是**当作正常文本**返回的，不抛异常 —— 必须主动识别，
+ * 否则会被误当成模型输出（真机上表现为"模型返回了 Markdown/乱码"）。
+ */
+const API_ERROR_HINT = /\[API 错误\]|response_format type is unavailable|invalid[_ ]request[_ ]error|API error/i;
+
+/**
+ * 供应商是否已被确认不支持结构化输出。跨会话记住这个事实：
+ * 命中一次之后就不再发注定失败的请求，直接走「纯文本 + 强 JSON 约束 + 转换修复」。
+ * null = 尚未从设置里读过。
+ */
+let jsonSchemaUnsupported = null;
+
+export function schemaUnsupportedKnown() {
+    if (jsonSchemaUnsupported === null) {
+        try {
+            jsonSchemaUnsupported = Boolean(rawSettings()?.jsonSchemaUnsupported);
+        } catch {
+            jsonSchemaUnsupported = false;
+        }
+    }
+    return jsonSchemaUnsupported;
+}
+
+/** 更换模型后可以重新尝试结构化输出。 */
+export function resetSchemaCapability() {
+    jsonSchemaUnsupported = false;
+    const box = rawSettings();
+    if (box) box.jsonSchemaUnsupported = false;
+    saveSettings();
+}
+
+export function isProviderApiError(text) {
+    return looksLikeApiError(text);
+}
+
+function looksLikeApiError(text) {
+    return API_ERROR_HINT.test(String(text ?? '').slice(0, 500));
+}
+
+/** 一次性结构化请求：能走原生结构化就走，供应商不支持时自动退回纯文本 + 强 JSON 约束。 */
+async function attemptJson({ system, prompt, schema, silent }) {
+    const th = TH();
+    const sys = `${JSON_RULES}\n\n${system ?? ''}`.trim();
+    const user = `${prompt}\n\n（再次强调：直接输出 JSON 对象，不要写说明文字、标题或 Markdown 代码块。）`;
+    const canStructured = Boolean(schema) && !schemaUnsupportedKnown();
+
+    if (canStructured && typeof th?.generateRaw === 'function') {
+        try {
+            const result = await th.generateRaw({
+                ordered_prompts: [
+                    { role: 'system', content: sys },
+                    { role: 'user', content: user },
+                ],
+                should_stream: false,
+                should_silence: silent,
+                json_schema: schema,
+            });
+            const text = typeof result === 'string' ? result : String(result?.content ?? '');
+            if (text.trim() && !looksLikeApiError(text)) return text;
+            if (looksLikeApiError(text)) markSchemaUnsupported(text);
+        } catch (error) {
+            console.warn('[IF Enhancer] generateRaw + json_schema 调用失败：', error?.message ?? error);
+        }
+    }
+    if (canStructured && typeof th?.generate === 'function') {
+        try {
+            const result = await th.generate({
+                user_input: `${sys}\n\n${user}`,
+                should_stream: false,
+                should_silence: silent,
+                json_schema: schema,
+            });
+            const text = typeof result === 'string' ? result : String(result?.content ?? '');
+            if (text.trim() && !looksLikeApiError(text)) return text;
+            if (looksLikeApiError(text)) markSchemaUnsupported(text);
+        } catch (error) {
+            console.warn('[IF Enhancer] generate + json_schema 调用失败：', error?.message ?? error);
+        }
+    }
+    return await generateText({ system: sys, prompt: user, silent });
+}
+
+function markSchemaUnsupported(text) {
+    if (jsonSchemaUnsupported) return;
+    jsonSchemaUnsupported = true;
+    const box = rawSettings();
+    if (box) {
+        box.jsonSchemaUnsupported = true;
+        saveSettings();
+    }
+    console.warn(
+        '[IF Enhancer] 当前供应商不支持结构化输出（response_format），已改为「纯文本 + 强 JSON 约束 + 转换修复」模式，并记住这个结论。更换模型后可在设置面板点「重新尝试结构化输出」。',
+        String(text).slice(0, 160),
+    );
+}
+
+export function jsonSchemaAvailable() {
+    return !schemaUnsupportedKnown();
+}
+
+/**
+ * 生成结构化对象：先请求一次；解析失败则把上一次的回答交给模型做一次"转换成 JSON"的修复。
+ * 修复这一步在真机上显著提高了成功率（转换比"边写文档边保证 JSON 格式"简单得多）。
  */
 export async function generateObject({ system = '', prompt, schema, silent = true }) {
     const th = TH();
-    if (!th?.generate && !th?.generateRaw && typeof ctx()?.executeSlashCommandsWithOptions !== 'function') {
+    const native = typeof ctx()?.executeSlashCommandsWithOptions === 'function';
+    if (!th?.generate && !th?.generateRaw && !native) {
         throw new Error('当前环境没有可用的生成通路：请确认已安装并启用「酒馆助手」扩展');
     }
     return withSlot(async () => {
-        if (typeof th.generate === 'function' && schema) {
-            try {
-                const result = await th.generate({
-                    user_input: prompt,
-                    should_stream: false,
-                    should_silence: silent,
-                    json_schema: schema,
-                    overrides: system ? { char_description: system } : undefined,
-                });
-                const text = typeof result === 'string' ? result : String(result?.content ?? '');
-                return parseJson(text);
-            } catch (error) {
-                console.warn('[IF Enhancer] 结构化输出失败，退回文本解析：', error?.message ?? error);
-            }
+        const first = await attemptJson({ system, prompt, schema, silent });
+        try {
+            return parseJson(first);
+        } catch (firstError) {
+            console.warn('[IF Enhancer] 首次结构化输出不可解析，尝试一次转换修复：', firstError?.message ?? firstError);
+            const repair = [
+                '你上一次的回答不是要求的 JSON。请把它转换成符合 JSON Schema 的 JSON。',
+                '只输出 JSON 本身，不要解释、不要 Markdown 代码块。',
+                '',
+                '【JSON Schema】',
+                JSON.stringify(schema?.value ?? schema ?? {}),
+                '',
+                '【上一次的回答】',
+                String(first).slice(0, 6000),
+            ].join('\n');
+            const second = await attemptJson({ system: '你是一个只输出 JSON 的格式转换器。', prompt: repair, schema, silent });
+            return parseJson(second);
         }
-        const text = await generateText({ system, prompt, silent });
-        return parseJson(text);
     });
 }
 

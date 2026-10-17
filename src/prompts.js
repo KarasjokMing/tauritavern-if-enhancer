@@ -110,6 +110,47 @@ ${existing ? `\n【该人物现有档案，需在此基础上修订】\n${existi
 - 输出简体中文。`;
 }
 
+/** 编辑模式：人物档案生成（结构化，避免丢失模型自创的人物名）。 */
+export function characterStructuredPrompt({ instruction, memoryContext, existing }) {
+    return `你是互动小说的人物设定编撰者。按作者要求产出可直接写入世界书的人物条目。
+
+【作者要求】
+${instruction}
+
+【已有资料】
+${memoryContext || '（无）'}
+${existing ? `\n【该人物现有档案，需在此基础上修订】\n${existing}\n` : ''}
+要求：
+- 先决定人物名：作者给了名字就用作者的名字；作者没给（例如只写了身份）就自己起一个符合世界观的名字，
+  并在 name 字段里给出这个名字。绝不要用"新人物""某长老"之类的占位名。
+- 同时给出 entry_name（世界书条目名），格式为「人物名_基础信息」。
+- content：人物档案正文，只用键值对与列表，不用散文段落。
+  只写偏离默认认知的特征：遮住名字仍能认出是谁；不写"精致、白皙、好看"这类空话。
+- keywords：能精确触发该条目的词组，必须包含人物名本身；不要用单个汉字、泛用职务或成语。
+- kind：核心角色填「角色」，功能性配角/路人填「NPC」。
+- 语言特征给出 5-10 句可直接使用的台词语料，语料只保留纯对话。
+- 输出简体中文。`;
+}
+
+export const CHARACTER_SCHEMA = {
+    name: 'if_character',
+    description: '人物档案条目',
+    value: {
+        type: 'object',
+        properties: {
+            name: { type: 'string', description: '人物名' },
+            entry_name: { type: 'string', description: '世界书条目名，如「苏云_基础信息」' },
+            kind: { type: 'string', enum: ['角色', 'NPC'] },
+            abstract: { type: 'string', description: '一句话摘要' },
+            content: { type: 'string', description: '档案正文（键值对与列表）' },
+            keywords: { type: 'array', items: { type: 'string' }, description: '绿灯关键词，必须含人物名' },
+            notes: { type: 'array', items: { type: 'string' }, description: '需要作者确认的事项' },
+        },
+        required: ['name', 'entry_name', 'kind', 'abstract', 'content', 'keywords', 'notes'],
+        additionalProperties: false,
+    },
+};
+
 /** 编辑模式：世界书条目生成。 */
 export function worldbookPrompt({ instruction, context, existing }) {
     return `你是互动小说世界书的编撰者，遵循既有的条目规范。把作者要求整理为世界书条目。

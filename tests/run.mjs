@@ -15,6 +15,9 @@ import { deriveStrategy, derivePosition, deriveOrder, deriveAll, thresholdOf } f
 import { lintKeywords, lintContent, lintEntry, lintBook, formatIssues } from '../src/worldbook/lint.js';
 import { buildEntries, normalizeGenerated, memoryEntriesFrom } from '../src/worldbook/builder.js';
 import { quickRoute, TASK } from '../src/core/router.js';
+import { parseJson, isProviderApiError } from '../src/core/llm.js';
+import { guessNameFromText } from '../src/core/edit.js';
+import { characterStructuredPrompt, CHARACTER_SCHEMA } from '../src/prompts.js';
 import { mergeDefaults, DEFAULTS } from '../src/config.js';
 
 const cases = [];
@@ -283,6 +286,49 @@ test('设置深合并：类型纠正与未知键忽略', () => {
     assert.equal(merged.memory.intervalTurns, 20);
     assert.equal(merged.enabled, DEFAULTS.enabled, '类型不匹配时不采纳');
     assert.equal(merged.未知键, undefined);
+});
+
+/* ------------------------------------------------------------ 结构化输出解析 */
+
+test('parseJson 能剥掉代码围栏', () => {
+    assert.deepEqual(parseJson('```json\n{"task":"prose.generate"}\n```'), { task: 'prose.generate' });
+});
+
+test('parseJson 能从未知文本中提取 JSON 对象', () => {
+    const text = '好的，这是结果：\n{"entries":[],"notes":[]}\n希望有帮助。';
+    assert.deepEqual(parseJson(text), { entries: [], notes: [] });
+});
+
+test('模型返回散文时 parseJson 给出可读报错（真机实测的失败模式）', () => {
+    const prose = '收到的「最近剧情」与「既有资料」两栏均为空，因此我只给出条目骨架。\n\n---\n\n## 条…';
+    assert.throws(() => parseJson(prose), /模型没有按要求返回结构化结果/);
+    assert.equal(parseJson(prose, { fallback: { ok: false } }).ok, false);
+});
+
+test('人物结构化提示词与 schema 要求人物名与条目名', () => {
+    const prompt = characterStructuredPrompt({ instruction: '创建一个合欢宗长老', memoryContext: '' });
+    assert.match(prompt, /人物名/);
+    assert.match(prompt, /entry_name/);
+    const required = CHARACTER_SCHEMA.value.required;
+    for (const key of ['name', 'entry_name', 'kind', 'content', 'keywords']) {
+        assert.ok(required.includes(key), `schema 缺少必需字段 ${key}`);
+    }
+    assert.deepEqual(CHARACTER_SCHEMA.value.properties.kind.enum, ['角色', 'NPC']);
+});
+
+test('模型返回 Markdown 时也能推断出人物名（真机实测的降级路径）', () => {
+    assert.equal(guessNameFromText('# 合欢宗·执法长老·裴守真\n\n## 基础档案\n- **姓名**：裴守真\n'), '裴守真');
+    assert.equal(guessNameFromText('## 褚令仪_基础信息\n**name**：褚令仪\n'), '褚令仪');
+    assert.equal(guessNameFromText('条目名：柳如烟_基础信息\n'), '柳如烟');
+    assert.equal(guessNameFromText('没有任何名字的一段说明文字。'), '');
+    assert.equal(guessNameFromText('角色_待命名', '兜底名'), '兜底名');
+});
+
+test('供应商拒绝结构化输出时能被识别（真机实测的 API 错误）', () => {
+    assert.equal(isProviderApiError('[API 错误] This response_format type is unavailable now (request_id: 082b)'), true);
+    assert.equal(isProviderApiError('response_format type is unavailable'), true);
+    assert.equal(isProviderApiError('{"entries":[]}'), false);
+    assert.equal(isProviderApiError('云压得极低，像一口倒扣的铁锅。'), false);
 });
 
 /* ------------------------------------------------------------ 运行 */

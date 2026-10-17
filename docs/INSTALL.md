@@ -72,7 +72,106 @@
 
 ---
 
-## 4. Tailscale 与远程调试（真机验证阶段）
+## 4. 手机端远程自检（adb 无线调试）
+
+手机上没有开发者工具，因此本扩展把排障信息写进**可被 adb 读取的文件**。
+
+### 4.1 连接
+
+手机端：设置 → 开发者选项 → 无线调试（保持开启），记下 `IP:端口`。
+电脑端（需 platform-tools）：
+
+```bash
+adb connect 192.168.x.x:<无线调试端口>
+adb devices -l
+```
+
+脚本 `tools/remote-connect.ps1` 封装了「连接 → 拉取诊断 → 打印结果」的常用动作（见下文）。
+
+### 4.2 TauriTavern 的数据目录
+
+与 SillyTavern 同构，且位于**外部存储**，adb 可直接读写：
+
+```
+/sdcard/Android/data/com.tauritavern.client/data/
+├── default-user/
+│   ├── settings.json            ← 扩展设置与诊断快照都在这
+│   ├── tauritavern-settings.json ← TT 自己的设置（含 dev.frontend_console_capture）
+│   ├── extensions/              ← 第三方扩展（git clone 或直接放文件夹）
+│   ├── worlds/                  ← 世界书 JSON
+│   ├── chats/ characters/       ← 聊天与角色卡
+└── /logs/tauritavern.log.<日期>  ← TT 后端日志 + 前端 console 错误
+```
+
+### 4.3 读开机自检（最省事的排障方式）
+
+扩展每次启动都会把挂载结果写进自己的设置：
+
+```bash
+adb pull /sdcard/Android/data/com.tauritavern.client/data/default-user/settings.json
+# 看 extension_settings.tt_if_enhancer.diagnostics
+```
+
+关键字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `modeBar` / `modeButtons` / `modeBarText` | 模式条是否挂上、按钮数量与文案 |
+| `dock` / `sendForm` / `textarea` | 落点容器与输入框是否存在 |
+| `tavernHelper` / `generateRaw` / `jsonSchema` | 酒馆助手与生成通路能力 |
+| `jsonSchemaDegraded` | 是否为 true：供应商不支持结构化输出，已降级为文本+修复 |
+| `backend` | 世界书后端（`tavern-helper` 或 `st-endpoint`） |
+| `boot` | `ok` 或 `failed`（failed 时附带 `error`） |
+
+也可在酒馆「扩展 → 互动小说增强系统 → 诊断」里直接看到同一份快照。
+
+### 4.4 看前端控制台
+
+TT 默认只把前端 **错误** 写进日志；需要完整 console 时，把
+`tauritavern-settings.json` 里的 `dev.frontend_console_capture` 改成 `true`（改完重启应用）：
+
+```bash
+adb pull .../default-user/tauritavern-settings.json
+# 把 dev.frontend_console_capture 改为 true 后推回
+adb push tauritavern-settings.json .../default-user/tauritavern-settings.json
+adb shell am force-stop com.tauritavern.client
+adb shell am start -n com.tauritavern.client/.MainActivity
+```
+
+前端日志会以 `INFO frontend: [main] …` 出现在 `logs/tauritavern.log.<日期>`；
+未开启时错误仍会以 `ERROR frontend: [main] …` 记录。**排障完记得改回 `false`**。
+
+### 4.5 端到端自检（无人值守）
+
+两套工具，任选其一；都会把结果写进扩展设置，可用 adb 读取。
+
+**A. 酒馆助手脚本版**（无需 adb 写文件，手机会自动跑）
+把 `tools/remote-self-test.js` 的内容导入「酒馆助手 → 脚本库」并启用，重载页面。
+它会：读取诊断 → 把写入目标临时切到「IF-Enhancer-自检」世界书 → 跑一次记忆整理与一次正文演绎
+→ 删除测试产生的聊天回复 → 还原写入目标，结果写入 `extension_settings.tt_if_enhancer.selfTest`。
+
+**B. 临时扩展版**（可在没有打开聊天时测试资料类任务）
+把 `tools/remote-selftest-extension/` 整个文件夹推到
+`.../default-user/extensions/tt-if-selftest/`，重启应用。
+它会在主扩展就绪后依次执行世界书写入、创建人物、无聊天正文三条路径，
+结果写入 `selfTest2/3/…`。**验证完请删除该文件夹。**
+
+### 4.6 一个可复现的真实问题（供对照）
+
+真机上曾出现「世界书写入失败」：模型返回 Markdown 而不是 JSON。
+最终定位为供应商 API 拒绝 `response_format`：
+
+```
+[API 错误] This response_format type is unavailable now
+```
+
+且该错误以正常文本返回、不抛异常。修复后扩展会自动降级并把结论记进设置
+（`extension_settings.tt_if_enhancer.jsonSchemaUnsupported = true`）。
+遇到同类现象先看这个字段，再决定是否点「重新尝试结构化输出」。
+
+---
+
+## 5. Tailscale 与真机调试（可选）
 
 Tailscale 只负责让电脑与手机在同一个 Tailnet 内互通，
 **不等于**能直接操作安卓上酒馆的内部数据。三条链路要分别验证：
@@ -108,7 +207,7 @@ adb logcat -v time | grep -iE "IF Enhancer|chromium.*console"
 
 ---
 
-## 5. 常见问题
+## 6. 常见问题
 
 | 现象 | 原因与处理 |
 | --- | --- |

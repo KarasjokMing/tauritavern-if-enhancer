@@ -1,0 +1,10 @@
+{
+    "display_name": "IF Enhancer 远程自检（临时）",
+    "loading_order": 999,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "author": "KarasjokMing",
+    "version": "0.0.1",
+    "auto_update": false
+}

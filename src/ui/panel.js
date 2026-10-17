@@ -4,10 +4,11 @@
  */
 import { settings, setSetting } from '../config.js';
 import { backendLabel, detectBackend, listWorldbooks, readWorldbook, resolveTargetBook } from '../worldbook/adapter.js';
-import { capabilitiesText, capabilities } from '../core/llm.js';
+import { capabilitiesText, capabilities, resetSchemaCapability } from '../core/llm.js';
 import { summarize, readMemory } from '../core/memory.js';
 import { refreshDialogueInjection } from '../core/dialogue.js';
 import { runEditInstruction } from '../core/edit.js';
+import { lastDiagnostics } from '../main.js';
 import { pushReceipt, setStage } from './resultbar.js';
 import { isTT, hasTH, toast } from '../env.js';
 
@@ -108,7 +109,19 @@ async function diagnostics() {
         `当前写入目标：${target}`,
         `结构化输出：${caps.jsonSchema ? '可用' : '不可用（将退回文本解析）'}`,
     ];
-    return lines.join('\n');
+    const boot = lastDiagnostics();
+    if (boot) {
+        lines.push(
+            '',
+            `开机自检（${boot.at ?? '—'}）：`,
+            `  模式条：${boot.modeBar ? `已挂载（${boot.modeButtons} 个按钮）` : '未挂载'}`,
+            `  落点容器：${boot.dock ? '有' : '无'} · 输入框：${boot.textarea ? '有' : '无'} · 发送区：${boot.sendForm ? '有' : '无'}`,
+            `  模式条文字：${boot.modeBarText || '（空）'}`,
+            `  视口：${boot.viewport ?? '—'} · 当前模式：${boot.mode ?? '—'}`,
+            boot.error ? `  启动错误：${boot.error}` : '',
+        );
+    }
+    return lines.filter(line => line !== '').join('\n');
 }
 
 export function mountPanel() {
@@ -189,8 +202,12 @@ export function mountPanel() {
                     detail: result.memory?.summary ?? '',
                 });
             }),
-            action('检查世界书', async () => {
-                const name = await resolveTargetBook(settings().worldbook);
+            action('重新尝试结构化输出', async () => {
+                resetSchemaCapability();
+                toast('已重置：下一次结构化任务会重新尝试原生结构化输出', 'success');
+                diag.textContent = await diagnostics();
+            }),
+            action('检查世界书', async () => {                const name = await resolveTargetBook(settings().worldbook);
                 const book = await readWorldbook(name);
                 const memory = await readMemory();
                 pushReceipt({

@@ -10,7 +10,7 @@ import { mountPanel } from './ui/panel.js';
 import { clearReceipts, pushReceipt, setStage } from './ui/resultbar.js';
 import { clearDialogueInjection, refreshDialogueInjection } from './core/dialogue.js';
 import { maybeAutoMemory, runEditInstruction } from './core/edit.js';
-import { isBusy, capabilitiesText } from './core/llm.js';
+import { isBusy, capabilities, capabilitiesText } from './core/llm.js';
 import { detectBackend, backendLabel, readWorldbook, resolveTargetBook } from './worldbook/adapter.js';
 import { readMemory } from './core/memory.js';
 
@@ -148,6 +148,39 @@ export async function diagnostics() {
     return { text: lines.join('\n'), lines };
 }
 
+/**
+ * 开机自检快照：把本次启动的挂载结果写进扩展设置。
+ * 手机上无法打开开发者工具时，这一条快照就是「界面到底挂上没有」的证据
+ * （可在设置面板的「诊断」里查看，也可让用户直接贴出来）。
+ */
+export function recordDiagnostics(extra = {}) {
+    const store = rawSettings();
+    if (!store) return null;
+    const bar = document.getElementById('tt-if-mode-bar');
+    const buttons = bar ? bar.querySelectorAll('.tt-if-mode-btn') : [];
+    store.diagnostics = {
+        at: new Date().toISOString(),
+        url: location.href,
+        mode: mode(),
+        dock: Boolean(document.getElementById('tt-if-dock')),
+        modeBar: Boolean(bar),
+        modeButtons: buttons.length,
+        modeBarText: bar ? bar.innerText.replace(/\s+/g, ' ').trim() : '',
+        sendForm: Boolean(document.querySelector('#send_form')),
+        textarea: Boolean(document.querySelector('#send_textarea')),
+        viewport: `${window.innerWidth}x${window.innerHeight}`,
+        ...capabilities(),
+        backend: detectBackend(),
+        ...extra,
+    };
+    saveSettings();
+    return store.diagnostics;
+}
+
+export function lastDiagnostics() {
+    return rawSettings()?.diagnostics ?? null;
+}
+
 export async function boot() {
     if (globalThis[GUARD]) {
         console.log('[IF Enhancer] 已加载过，跳过重复初始化。');
@@ -162,10 +195,12 @@ export async function boot() {
         installInterceptor();
         wireEvents();
         await refreshDialogueInjection(mode() === MODE.DIALOGUE);
+        recordDiagnostics({ boot: 'ok' });
         globalThis.ttIfEnhancer = {
             setMode: next => import('./ui/toggle.js').then(module => module.setMode(next, { user: true })),
             runEditInstruction,
             diagnostics,
+            recordDiagnostics,
             settings,
             updateSettings,
         };
@@ -173,6 +208,7 @@ export async function boot() {
     } catch (error) {
         globalThis[GUARD] = false;
         console.error('[IF Enhancer] 初始化失败：', error);
+        recordDiagnostics({ boot: 'failed', error: error?.message ?? String(error) });
         toast(`互动小说增强系统初始化失败：${error?.message ?? error}`, 'error');
     }
 }
