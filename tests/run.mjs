@@ -21,7 +21,7 @@ import { MODE, MODE_LABEL } from '../src/ui/toggle.js';
 import { parsePath, applyStatPatch, flattenStatData, numericPaths } from '../src/core/mvu.js';
 import { sanitizeForSlash, composePrompt, composeNegative } from '../src/core/image.js';
 import { characterStructuredPrompt, CHARACTER_SCHEMA, looksLikeMetaReply } from '../src/prompts.js';
-import { mergeDefaults, DEFAULTS } from '../src/config.js';
+import { mergeDefaults, migrateSettings, DEFAULTS } from '../src/config.js';
 
 const cases = [];
 const test = (name, fn) => cases.push({ name, fn });
@@ -406,6 +406,17 @@ test('供应商拒绝结构化输出时能被识别（真机实测的 API 错误
     assert.equal(isProviderApiError('云压得极低，像一口倒扣的铁锅。'), false);
 });
 
+test('设置迁移：v1 的写入目标改为角色卡绑定世界书', () => {
+    const raw = { version: 1, worldbook: { target: 'chat', nameTemplate: '{{chat}}·互动小说', autoCreate: true, primaryName: '' } };
+    assert.equal(migrateSettings(raw), true);
+    assert.equal(raw.worldbook.target, 'char');
+    assert.equal(raw.worldbook.nameTemplate, '{{char}}·互动小说');
+    assert.equal(raw.version, DEFAULTS.version);
+    const pinned = { version: 1, worldbook: { target: 'chat', primaryName: '我的书' } };
+    migrateSettings(pinned);
+    assert.equal(pinned.worldbook.target, 'chat', '用户手动指定世界书时不动目标');
+    assert.equal(migrateSettings({ version: DEFAULTS.version }), false, '已是当前版本不再迁移');
+});
 /* ------------------------------------------------------------ MVU 变量 */
 
 test('MVU 路径解析与按路径改值（含 delta 与新建路径）', () => {

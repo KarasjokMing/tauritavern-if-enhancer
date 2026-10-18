@@ -5,7 +5,7 @@
 import { rawSettings, saveSettings } from './env.js';
 
 export const DEFAULTS = {
-    version: 1,
+    version: 2,
     enabled: true,
     defaultMode: 'dialogue',
     lastMode: 'dialogue',
@@ -98,8 +98,33 @@ export function mergeDefaults(defaults, incoming) {
 
 let cache = null;
 
+/**
+ * 设置迁移：老版本存在用户设置里的旧默认值会覆盖新默认值，必须显式迁移。
+ * v1 → v2：写入目标从「独立的聊天·互动小说书」改为「角色卡绑定的世界书」。
+ */
+export function migrateSettings(raw) {
+    if (!raw || typeof raw !== 'object') return false;
+    const from = Number(raw.version ?? 1);
+    if (from >= DEFAULTS.version) return false;
+    if (from < 2) {
+        raw.worldbook ??= {};
+        if (!raw.worldbook.primaryName) {
+            raw.worldbook.target = 'char';
+            if (!raw.worldbook.nameTemplate || raw.worldbook.nameTemplate === '{{chat}}·互动小说') {
+                raw.worldbook.nameTemplate = '{{char}}·互动小说';
+            }
+        }
+    }
+    raw.version = DEFAULTS.version;
+    return true;
+}
+
 export function settings() {
-    if (!cache) cache = mergeDefaults(DEFAULTS, rawSettings());
+    if (!cache) {
+        const box = rawSettings();
+        if (migrateSettings(box)) saveSettings();
+        cache = mergeDefaults(DEFAULTS, box);
+    }
     return cache;
 }
 
