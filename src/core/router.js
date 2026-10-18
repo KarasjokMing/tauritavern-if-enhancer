@@ -13,6 +13,7 @@ export const TASK = {
     WORLDBOOK_WRITE: 'worldbook.write',
     MEMORY_SUMMARIZE: 'memory.summarize',
     IMAGE_GENERATE: 'image.generate',
+    MVU_ADJUST: 'mvu.adjust',
     CONFIG_ADJUST: 'config.adjust',
     UNKNOWN: 'unknown',
 };
@@ -25,11 +26,22 @@ export const TASK_LABEL = {
     'worldbook.write': '世界书操作',
     'memory.summarize': '整理记忆',
     'image.generate': '生成配图',
+    'mvu.adjust': '调整数值',
     'config.adjust': '记录作者偏好',
     unknown: '未识别',
 };
 
 const RULES = [
+    {
+        // MVU 数值：改当前值，或改增长速度（好感/国库/积分/属性…）
+        task: TASK.MVU_ADJUST,
+        weight: 4,
+        patterns: [
+            /(好感|积分|国库|民心|魅力|体质|敏捷|智力|统御|兵力|军饷|黄金|年龄|怀孕|属性|数值|进度)[^。；\n]{0,14}(调到|改到|设成|改成|调高|调低|加|减|涨|降|提升|提高|增加|减少|快一?点|快些|慢一?点|慢些)/u,
+            /(把|将|让|给)[^。；\n]{0,10}(好感|积分|国库|民心|魅力|体质|敏捷|智力|统御|兵力|军饷|黄金|年龄|属性|数值)[^。；\n]{0,10}(调到|改到|设成|改成|涨|加|减|提升|提高|增加|减少|快|慢)/u,
+            /(涨|提升|提高|增加)(得|的)?(更)?(快|多|猛)一?点/u,
+        ],
+    },
     {
         // 配图：由扩展自己写提示词，作者不需要写 prompt。
         task: TASK.IMAGE_GENERATE,

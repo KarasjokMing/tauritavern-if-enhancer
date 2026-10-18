@@ -134,6 +134,56 @@ export function numericPaths(statData) {
         .map(item => item.path);
 }
 
+/** 数组元素若带姓名，取出来当作标注（如 后宫[0] → 周皇后）。 */
+function ownerHint(statData, path) {
+    const match = String(path).match(/^(.*\[\d+\])\./);
+    if (!match) return '';
+    const parts = parsePath(match[1]);
+    let node = statData;
+    for (const part of parts) {
+        if (node == null) return '';
+        node = node[part];
+    }
+    if (node && typeof node === 'object') {
+        return String(node.姓名 ?? node.name ?? node.名称 ?? '').trim();
+    }
+    return '';
+}
+
+/**
+ * 给模型看的变量清单：`路径 = 当前值`，数组元素带上归属人。
+ * 只列数值与短字符串，避免把长文本塞进提示词。
+ */
+export function describeVariables(statData, { limit = 120 } = {}) {
+    const rows = [];
+    for (const item of flattenStatData(statData)) {
+        const value = item.value;
+        if (typeof value === 'number') {
+            const hint = ownerHint(statData, item.path);
+            rows.push(`${item.path} = ${value}${hint ? `（${hint}）` : ''}`);
+        } else if (typeof value === 'boolean') {
+            rows.push(`${item.path} = ${value}`);
+        } else if (typeof value === 'string' && value.length <= 24) {
+            const hint = ownerHint(statData, item.path);
+            rows.push(`${item.path} = "${value}"${hint ? `（${hint}）` : ''}`);
+        }
+        if (rows.length >= limit) break;
+    }
+    return rows.join('\n');
+}
+
+/** 按路径读值（读不到返回 undefined）。 */
+export function getByPath(statData, path) {
+    return getAt(statData ?? {}, parsePath(path));
+}
+
+/** 按路径读值并把数值型格式化好，供回执显示。 */
+export function formatValue(value) {
+    if (typeof value === 'number') return String(Number(value.toFixed(2)));
+    if (value === undefined || value === null) return '（无）';
+    return String(value);
+}
+
 /** 一次读改写的便捷封装。 */
 export async function patchStatData(patch, options = {}) {
     const stat = readStatData(options);

@@ -35,7 +35,7 @@ export const DEFAULTS = {
     },
     memory: {
         enabled: true,
-        autoTrigger: 'interval', // interval | scene | manual
+        autoTrigger: 'manual', // 自动维护已由 maintain 接管；这里保留手动触发
         intervalTurns: 12,
         book: '',
         keepSummaryEntries: 40,
@@ -44,6 +44,17 @@ export const DEFAULTS = {
         enabled: true,
         blockOnError: false,
         strictDashes: true,
+    },
+    /** 自动维护：上下文涨到阈值就自己总结，并把记忆/人物经历写回角色卡。 */
+    maintain: {
+        enabled: true,
+        trigger: 'chars', // chars | interval
+        charThreshold: 24000,
+        intervalReplies: 20,
+        keepRecent: 12,
+        updateCharacters: true,
+        writeTarget: 'card', // card | book
+        lastRunAt: '',
     },
     /** 自动配图：插件自己按剧情写提示词，作者不需要写 prompt。 */
     image: {

@@ -6,6 +6,7 @@ import { settings, setSetting } from '../config.js';
 import { backendLabel, detectBackend, listWorldbooks, readWorldbook, resolveTargetBook } from '../worldbook/adapter.js';
 import { capabilitiesText, capabilities, resetSchemaCapability } from '../core/llm.js';
 import { summarize, readMemory } from '../core/memory.js';
+import { maintain } from '../core/maintain.js';
 import { refreshDialogueInjection } from '../core/dialogue.js';
 import { runEditInstruction } from '../core/edit.js';
 import { lastDiagnostics } from '../main.js';
@@ -183,17 +184,25 @@ export function mountPanel() {
     box.append(text('新建世界书名称模板', 'worldbook.nameTemplate', '可用 {{char}} 与 {{chat}}'));
     box.append(text('手动指定世界书名称（留空则自动）', 'worldbook.primaryName'));
 
-    box.append(el('h5', { textContent: '长期记忆' }));
-    box.append(checkbox('启用自动整理', 'memory.enabled'));
+    box.append(el('h5', { textContent: '自动维护（记忆 / 人物经历）' }));
+    box.append(checkbox('启用自动维护', 'maintain.enabled', '达到阈值就在后台总结，不需要你发指令'));
     box.append(
-        select('触发方式', 'memory.autoTrigger', {
+        select('触发方式', 'maintain.trigger', {
+            chars: '按上下文总字数（推荐）',
             interval: '按回复条数间隔',
-            scene: '仅场景变化时（暂未启用）',
-            manual: '只在编辑模式手动触发',
         }),
     );
-    box.append(number('间隔回复条数', 'memory.intervalTurns', { min: 2, max: 100 }));
-    box.append(text('记忆专用世界书（留空则用写入目标）', 'memory.book'));
+    box.append(number('上下文字数阈值', 'maintain.charThreshold', { min: 4000, max: 200000, hint: '聊天正文总字数到这么多就总结一次；再次触发还需再涨约 40%' }));
+    box.append(number('按条数触发时每 N 条', 'maintain.intervalReplies', { min: 2, max: 200 }));
+    box.append(number('每次总结带入的最近消息数', 'maintain.keepRecent', { min: 4, max: 60 }));
+    box.append(checkbox('同时累积人物经历', 'maintain.updateCharacters', '写成 [互动小说]人物经历·某某 条目，不改动卡里原有的人设条目'));
+    box.append(
+        select('写入位置', 'maintain.writeTarget', {
+            card: '角色卡内嵌世界书（写前整卡备份）',
+            book: '角色卡绑定的世界书',
+        }),
+    );
+    box.append(checkbox('启用旧版按条数记忆', 'memory.enabled', '与上面的自动维护二选一，一般保持关闭'));
 
     box.append(el('h5', { textContent: '自动配图（提示词由扩展自己写）' }));
     box.append(checkbox('启用配图功能', 'image.enabled'));
@@ -234,15 +243,17 @@ export function mountPanel() {
             action('刷新诊断', async () => {
                 diag.textContent = await diagnostics();
             }),
-            action('立即整理记忆', async () => {
-                setStage('正在整理长期记忆…');
-                const result = await summarize({ silent: true });
+            action('立即维护一次', async () => {
+                setStage('正在总结最近剧情…');
+                const result = await maintain({ stage: setStage });
                 setStage('');
                 pushReceipt({
                     ok: result.ok,
-                    title: result.ok ? '已整理长期记忆' : '暂不需要整理',
-                    lines: result.ok ? [`新增 ${result.result.created} 条，更新 ${result.result.updated} 条`] : [result.reason],
-                    detail: result.memory?.summary ?? '',
+                    title: result.ok ? '已维护记忆 / 人物经历' : '暂不需要维护',
+                    lines: result.ok
+                        ? [`${result.where}：新增 ${result.created ?? 0} 条，更新 ${result.updated ?? 0} 条`, `上下文 ${result.chars ?? 0} 字`]
+                        : [result.reason],
+                    detail: String(result.memory?.summary ?? '').slice(0, 500),
                 });
             }),
             action('试生成一张配图', async () => {

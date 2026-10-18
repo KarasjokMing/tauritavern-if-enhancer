@@ -15,6 +15,8 @@ import { getMessages, renderHistory, appendMessages, replaceMessage, findLastMes
 import { readMemory, summarize, applyCorrection, memoryContextText, resolveMemoryBook } from './memory.js';
 import { refreshDialogueInjection, setPerformanceGuidance } from './dialogue.js';
 import { generateSceneImage } from './image.js';
+import { readStatData, patchStatData, describeVariables, getByPath, formatValue } from './mvu.js';
+import { upsertCardEntry, readCard } from './card.js';
 import {
     PROSE_GENERATE,
     BEAT_DIRECTIVE,
@@ -23,6 +25,8 @@ import {
     characterPrompt,
     characterStructuredPrompt,
     CHARACTER_SCHEMA,
+    mvuAdjustPrompt,
+    MVU_ADJUST_SCHEMA,
     worldbookPrompt,
     WORLDBOOK_ENTRY_SCHEMA,
     performancePrompt,
@@ -375,6 +379,119 @@ async function handleImageGenerate(route, stage) {
     });
 }
 
+/* ------------------------------------------------------------ MVU 数值 */
+
+export const GROWTH_ENTRY = '[互动小说]数值增长规则';
+
+/**
+ * 写"数值增长规则"：优先写进角色卡内嵌世界书（写前自动整卡备份），
+ * 没有内嵌书则写进卡绑定的世界书。只追加带前缀的条目，不动卡里原有规则条目。
+ */
+async function writeGrowthRule(ruleText) {
+    const text = String(ruleText ?? '').trim();
+    if (!text) return null;
+    let card = null;
+    try {
+        card = await readCard();
+    } catch {
+        card = null;
+    }
+    if (card?.book) {
+        const prev = card.entries.find(item => (item.comment ?? '') === GROWTH_ENTRY);
+        const lines = prev?.content ? String(prev.content).split('\n').filter(Boolean) : ['数值增长规则（作者设定，优先于卡内默认规则）:'];
+        const line = `- ${text}`;
+        if (!lines.includes(line)) lines.push(line);
+        await upsertCardEntry({
+            type: '扮演准则',
+            part: '',
+            name: GROWTH_ENTRY,
+            abstract: '作者设定的数值增长规则',
+            content: lines.join('\n'),
+            keys: [],
+            constant: true,
+            enabled: true,
+        });
+        return { where: '角色卡内嵌世界书（写前已整卡备份）' };
+    }
+    const book = await currentBook();
+    const built = buildEntries([
+        {
+            type: '扮演准则',
+            part: '',
+            name: GROWTH_ENTRY,
+            abstract: '作者设定的数值增长规则',
+            content: `数值增长规则:\n- ${text}`,
+            keywords: [],
+            constant: true,
+            enabled: true,
+        },
+    ], { strictDashes: settings().lint.strictDashes });
+    await writeEntries(book, built.entries, { mode: 'upsert' });
+    return { where: `世界书《${book}》` };
+}
+
+/** 调整 MVU 数值或增长规则（例如「周皇后好感调到 60」「好感涨快点」）。 */
+async function handleMvuAdjust(route, stage) {
+    const stat = readStatData();
+    if (!stat || !Object.keys(stat).length) {
+        return receipt({
+            ok: false,
+            task: route.task,
+            label: TASK_LABEL[route.task],
+            title: '这张卡没有在跑 MVU 变量',
+            lines: ['当前聊天里找不到 stat_data。', '若这张卡有变量系统，先正常对话一轮再试；没有变量系统时改用世界书类指令。'],
+        });
+    }
+    stage?.('正在读取变量…');
+    const plan = await generateObject({
+        system: mvuAdjustPrompt({ instruction: route.instruction, variables: describeVariables(stat) }),
+        prompt: `作者要求：\n${route.instruction}`,
+        schema: MVU_ADJUST_SCHEMA,
+        silent: true,
+    });
+    const rawPatches = plan?.patches;
+    const patches = rawPatches && typeof rawPatches === 'object' && !Array.isArray(rawPatches) ? rawPatches : {};
+    const lines = [];
+    const warnings = [];
+
+    if (Object.keys(patches).length) {
+        const before = Object.fromEntries(Object.keys(patches).map(path => [path, getByPath(stat, path)]));
+        stage?.('正在写入变量…');
+        const next = await patchStatData(patches);
+        for (const path of Object.keys(patches)) {
+            lines.push(`${path}：${formatValue(before[path])} → ${formatValue(getByPath(next, path))}`);
+            if (before[path] === undefined) warnings.push(`路径「${path}」原本不存在，已新建`);
+        }
+    }
+    if (plan?.rule) {
+        stage?.('正在写入增长规则…');
+        const target = await writeGrowthRule(plan.rule);
+        lines.push(`增长规则：${plan.rule}`);
+        if (target) lines.push(`写入位置：${target.where}`);
+        const prefs = [...(settings().authorPreferences ?? []), { at: new Date().toISOString(), text: `数值规则：${plan.rule}` }].slice(-20);
+        updateSettings({ authorPreferences: prefs });
+    }
+    if (!lines.length) {
+        return receipt({
+            ok: false,
+            task: route.task,
+            label: TASK_LABEL[route.task],
+            title: '没找到要改的数值',
+            lines: ['模型没能把指令对应到现有变量，可以说得更具体，例如「周皇后好感调到 60」。'],
+            detail: String(plan?.summary ?? ''),
+        });
+    }
+    return receipt({
+        ok: true,
+        task: route.task,
+        label: TASK_LABEL[route.task],
+        title: '已调整数值 / 规则',
+        lines,
+        detail: String(plan?.summary ?? ''),
+        warnings,
+    });
+}
+
 /* ------------------------------------------------------------ 配置类任务 */
 
 export const PREFERENCE_ENTRY = '作者偏好';
@@ -517,6 +634,7 @@ const HANDLERS = {
     [TASK.WORLDBOOK_WRITE]: handleWorldbookWrite,
     [TASK.MEMORY_SUMMARIZE]: handleMemorySummarize,
     [TASK.IMAGE_GENERATE]: handleImageGenerate,
+    [TASK.MVU_ADJUST]: handleMvuAdjust,
     [TASK.CONFIG_ADJUST]: handleConfigAdjust,
     [TASK.UNKNOWN]: handleUnknown,
 };

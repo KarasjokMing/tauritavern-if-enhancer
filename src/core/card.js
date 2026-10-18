@@ -105,6 +105,34 @@ export async function upsertCardEntry(entry, options = {}) {
     return { created: index < 0, total: entries.length, name: entry.name };
 }
 
+/**
+ * 批量 upsert 卡内嵌世界书条目（只重写一次 PNG，避免每条都整卡落盘）。
+ * @param {object[]} list 内部条目数组
+ * @returns {{created:number, updated:number, total:number}}
+ */
+export async function upsertCardEntries(list, options = {}) {
+    const card = await readCard(options.avatar);
+    if (!card.book) throw new Error('当前角色卡没有内嵌世界书（character_book）');
+    const entries = [...card.entries];
+    let created = 0;
+    let updated = 0;
+    for (const entry of list ?? []) {
+        if (!entry?.name) continue;
+        const index = entries.findIndex(item => (item.comment ?? '') === entry.name);
+        const flat = toFlatEntry(entry, index >= 0 ? index : entries.length);
+        if (index >= 0) {
+            entries[index] = { ...entries[index], ...flat, uid: entries[index].uid ?? flat.uid };
+            updated += 1;
+        } else {
+            entries.push(flat);
+            created += 1;
+        }
+    }
+    if (!created && !updated) return { created: 0, updated: 0, total: entries.length };
+    await mergeCard({ character_book: { ...card.book, entries } }, options);
+    return { created, updated, total: entries.length };
+}
+
 /** 删除卡内嵌世界书里的条目。 */
 export async function deleteCardEntry(name, options = {}) {
     const card = await readCard(options.avatar);

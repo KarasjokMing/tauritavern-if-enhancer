@@ -282,6 +282,76 @@ export const WORLDBOOK_ENTRY_SCHEMA = {
     },
 };
 
+/** 编辑模式：MVU 数值与增长规则调整。 */
+export function mvuAdjustPrompt({ instruction, variables }) {
+    return `你是互动小说 MVU 变量系统的编辑器。作者要求调整数值，或调整数值的增长速度。
+
+【作者要求】
+${instruction}
+
+【当前可用变量（路径 = 当前值，括号内是归属人）】
+${variables || '（当前没有可用数值变量）'}
+
+任务：
+- 若作者要"改成某个值 / 加多少 / 减多少"：输出 patches，键是**上面原样出现的路径**（含 [0] 这类下标），
+  值是数字（直接设为该值）或 {"delta": 数字}（在当前值上加减）。
+- 若作者要"涨得快些 / 慢些 / 更容易提升 / 更难"：输出 rule，用一两句中文写清该数值今后如何变化
+  （触发条件、每次幅度、上限）；patches 留空。
+- 两者可以同时给出。**绝对不要编造上面列表里没有的路径**；找不到对应变量就把 patches 留空并在 summary 里说明。
+- 只输出 JSON，不要解释。`;
+}
+
+export const MVU_ADJUST_SCHEMA = {
+    name: 'if_mvu_adjust',
+    description: 'MVU 数值与增长规则调整',
+    value: {
+        type: 'object',
+        properties: {
+            patches: { type: 'object', description: '路径 → 新值 或 {"delta": 数值}' },
+            rule: { type: 'string', description: '增长规则文本，没有则空字符串' },
+            summary: { type: 'string', description: '一句话说明改了什么（中文）' },
+        },
+        required: ['patches', 'rule', 'summary'],
+        additionalProperties: false,
+    },
+};
+
+/** 自动维护：把最近剧情压成记忆与人物更新。 */
+export function maintainPrompt({ history, previous, existing }) {
+    return `你是互动小说的后台维护者。在不改变既定设定的前提下，整理最近剧情。
+
+【既有长期记忆】
+${previous || '（无）'}
+
+【最近剧情】
+${history}
+
+输出 JSON：
+- summary：当前故事的简短进展（按时间顺序，只保留仍然有效的事实，不超过 300 字）。
+- characters：在场或重要人物**这一段的经历与变化**（一句话一条，写"做了什么/关系变了什么"，不要重复人设）。
+- threads：尚未回收的线索（一句话一条）。
+- scene：当前场景（地点 + 在场人物）。
+- facts_removed：因与最近剧情冲突而应失效的旧事实（没有就空数组）。
+不要输出解释。`;
+}
+
+export const MAINTAIN_SCHEMA = {
+    name: 'if_maintain',
+    description: '记忆维护结果',
+    value: {
+        type: 'object',
+        properties: {
+            summary: { type: 'string' },
+            characters: { type: 'array', items: { type: 'string' } },
+            threads: { type: 'array', items: { type: 'string' } },
+            scene: { type: 'string' },
+            facts_removed: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['summary', 'characters', 'threads', 'scene', 'facts_removed'],
+        additionalProperties: false,
+    },
+};
+
 /** 编辑模式：人物"当前表现调整"（不是设定修改）。 */
 export function performancePrompt({ instruction, entities }) {
     return `作者要求调整人物在当前场景中的表现方式，这不是设定修改。

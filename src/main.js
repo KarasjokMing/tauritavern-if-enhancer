@@ -9,7 +9,8 @@ import { MODE, initMode, mode, mountToggle, paintMode } from './ui/toggle.js';
 import { mountPanel } from './ui/panel.js';
 import { clearReceipts, pushReceipt, setStage } from './ui/resultbar.js';
 import { clearDialogueInjection, refreshDialogueInjection } from './core/dialogue.js';
-import { maybeAutoMemory, runEditInstruction } from './core/edit.js';
+import { runEditInstruction } from './core/edit.js';
+import { maybeAutoMaintain } from './core/maintain.js';
 import { maybeAutoImage } from './core/image.js';
 import { isBusy, capabilities, capabilitiesText } from './core/llm.js';
 import { detectBackend, backendLabel, readWorldbook, resolveTargetBook } from './worldbook/adapter.js';
@@ -110,7 +111,8 @@ function wireEvents() {
         lastReceiveAt = now;
         if (mode() !== MODE.DIALOGUE) return;
         const turn = turnCounter();
-        await maybeAutoMemory(turn);
+        // 自动维护：上下文达到阈值就自己总结，并把记忆/人物经历写回角色卡。
+        await maybeAutoMaintain({ turn, onStage: setStage, onResult: pushReceipt });
         // 自动配图：提示词由扩展按剧情撰写，作者不需要输入任何内容。
         await maybeAutoImage(turn, { onStage: setStage, onResult: pushReceipt });
     };
