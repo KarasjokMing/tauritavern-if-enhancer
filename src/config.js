@@ -28,8 +28,8 @@ export const DEFAULTS = {
         confirmBeforeRevise: true,
     },
     worldbook: {
-        target: 'chat', // chat | char | global
-        nameTemplate: '{{chat}}·互动小说',
+        target: 'char', // char | chat | global —— 默认写进角色卡绑定的世界书
+        nameTemplate: '{{char}}·互动小说',
         autoCreate: true,
         primaryName: '',
     },

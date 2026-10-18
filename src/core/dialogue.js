@@ -4,13 +4,21 @@
  */
 import { settings } from '../config.js';
 import { ctx, toast } from '../env.js';
-import { DIALOGUE_RULES } from '../prompts.js';
+import { DIALOGUE_RULES, PROTAGONIST_LOCK } from '../prompts.js';
 import { readMemory, memoryContextText } from './memory.js';
 
 const KEY = 'TT_IF_DIALOGUE';
 
 let cachedText = '';
 let active = false;
+
+/** 把 {{user}} / {{char}} 换成真实名字——注入文本不保证会被酒馆替换宏。 */
+export function substituteNames(text) {
+    const c = ctx();
+    const userName = c?.name1 || '玩家';
+    const charName = c?.name2 || c?.characters?.[c.characterId]?.name || '角色';
+    return String(text ?? '').replaceAll('{{user}}', userName).replaceAll('{{char}}', charName);
+}
 
 function injectionPoint() {
     const c = ctx();
@@ -36,12 +44,15 @@ function preferenceBlock() {
     return `【作者偏好与运行约束】\n${list.map(item => `- ${item.text}`).join('\n')}`;
 }
 
-/** 组装注入文本。 */
-export async function buildDialogueText() {
+/**
+ * 组装注入文本。对话模式注入完整导演规则；演绎模式只注入主角锁定（不干扰预设的文风）。
+ * @param {'dialogue'|'prose'|'edit'} activeMode
+ */
+export async function buildDialogueText(activeMode = 'dialogue') {
     const config = settings();
     const parts = [];
-    if (config.dialogue.injectRules) {
-        parts.push(DIALOGUE_RULES);
+    if (activeMode === 'dialogue' && config.dialogue.injectRules) {
+        parts.push(substituteNames(DIALOGUE_RULES));
         if (config.dialogue.injectSceneState) {
             try {
                 const memory = await readMemory();
@@ -51,6 +62,8 @@ export async function buildDialogueText() {
                 /* 记忆不可读时忽略 */
             }
         }
+    } else if (activeMode === 'prose') {
+        parts.push(substituteNames(PROTAGONIST_LOCK));
     }
     const prefs = preferenceBlock();
     if (prefs) parts.push(prefs);
@@ -59,13 +72,21 @@ export async function buildDialogueText() {
     return parts.join('\n\n');
 }
 
+function normalizeMode(activeMode) {
+    if (activeMode === true) return 'dialogue';
+    if (activeMode === false || activeMode == null) return 'none';
+    return activeMode;
+}
+
 /** 写入或清除注入。 */
 export function applyDialogueInjection(activeMode = active) {
-    active = activeMode;
+    const mode = normalizeMode(activeMode);
+    active = mode;
     const c = ctx();
     if (!c?.setExtensionPrompt) return false;
     const box = c.extensionSettings?.tt_if_enhancer;
-    if (!settings().enabled || !active) {
+    const wanted = mode === 'dialogue' || mode === 'prose';
+    if (!settings().enabled || !wanted) {
         c.setExtensionPrompt(KEY, '', injectionPoint(), 0, false, 0);
         return true;
     }
@@ -76,12 +97,14 @@ export function applyDialogueInjection(activeMode = active) {
 
 /** 重新计算并应用（切换模式、切聊天、编辑完成后调用）。 */
 export async function refreshDialogueInjection(activeMode = active) {
-    cachedText = await buildDialogueText();
-    return applyDialogueInjection(activeMode);
+    const mode = normalizeMode(activeMode);
+    cachedText = await buildDialogueText(mode === 'none' ? 'dialogue' : mode);
+    return applyDialogueInjection(mode);
 }
 
 export function clearDialogueInjection() {
     const c = ctx();
+    active = 'none';
     c?.setExtensionPrompt?.(KEY, '', injectionPoint(), 0, false, 0);
 }
 

@@ -5,7 +5,7 @@
  */
 import { settings, updateSettings } from './config.js';
 import { evt, onEvent, toast, waitForHost, saveSettings, rawSettings, isTT, hasTH } from './env.js';
-import { MODE, initMode, mode, mountToggle, paintMode, taskType } from './ui/toggle.js';
+import { MODE, initMode, mode, mountToggle, paintMode } from './ui/toggle.js';
 import { mountPanel } from './ui/panel.js';
 import { clearReceipts, pushReceipt, setStage } from './ui/resultbar.js';
 import { clearDialogueInjection, refreshDialogueInjection } from './core/dialogue.js';
@@ -39,27 +39,28 @@ function swallow(event) {
     event.stopImmediatePropagation();
 }
 
-async function handleEditInput() {
+async function handleAuthorInput() {
     if (isBusy()) {
-        toast('上一条编辑指令还在执行中', 'warning');
+        toast('上一条指令还在执行中', 'warning');
         return;
     }
     const text = readInput();
     if (!text) {
-        toast('请输入作者指令，例如「突然下雨，张婆一反常态地走进雨中」', 'warning');
+        toast(mode() === MODE.PROSE ? '请写下这一轮的节拍' : '请输入编辑指令', 'warning');
         return;
     }
     clearInput();
-    setStage('正在理解指令…');
+    const isProse = mode() === MODE.PROSE;
+    setStage(isProse ? '正在按节拍演绎（经预设管线）…' : '正在理解编辑指令…');
     try {
-        const result = await runEditInstruction(text, { stage: setStage, taskType: taskType() });
+        const result = await runEditInstruction(text, { stage: setStage, taskType: isProse ? 'prose.generate' : 'auto' });
         setStage('');
         pushReceipt(result);
     } catch (error) {
         setStage('');
         pushReceipt({ ok: false, title: '编辑指令执行失败', lines: [error?.message ?? String(error)], instruction: text });
     }
-    await refreshDialogueInjection(mode() === MODE.DIALOGUE);
+    await refreshDialogueInjection(mode());
 }
 
 /** 编辑模式下截获发送动作（发送按钮与回车），阻止其作为主角台词发出。 */
@@ -67,22 +68,22 @@ function installInterceptor() {
     document.addEventListener(
         'click',
         event => {
-            if (!settings().enabled || mode() !== MODE.EDIT) return;
+            if (!settings().enabled || mode() === MODE.DIALOGUE) return;
             const button = event.target?.closest?.('#send_but, #send_button');
             if (!button) return;
             swallow(event);
-            handleEditInput();
+            handleAuthorInput();
         },
         true,
     );
     document.addEventListener(
         'keydown',
         event => {
-            if (!settings().enabled || mode() !== MODE.EDIT) return;
+            if (!settings().enabled || mode() === MODE.DIALOGUE) return;
             if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey) return;
             if (event.target?.id !== 'send_textarea') return;
             swallow(event);
-            handleEditInput();
+            handleAuthorInput();
         },
         true,
     );
@@ -100,7 +101,7 @@ function turnCounter() {
 function wireEvents() {
     onEvent(evt('CHAT_CHANGED'), async () => {
         clearReceipts();
-        await refreshDialogueInjection(mode() === MODE.DIALOGUE);
+        await refreshDialogueInjection(mode());
     });
 
     const onReply = async () => {
@@ -120,9 +121,9 @@ function wireEvents() {
 async function onModeChanged(next) {
     if (next === MODE.EDIT) {
         clearDialogueInjection();
-        toast('编辑模式：输入将被当作作者指令，不再扮演主角', 'info');
+        toast('编辑模式：AI 负责设置层，不会写进正文', 'info');
     } else {
-        await refreshDialogueInjection(true);
+        await refreshDialogueInjection(next);
     }
     paintMode();
 }
@@ -172,13 +173,7 @@ export function recordDiagnostics(extra = {}) {
         sendForm: Boolean(document.querySelector('#send_form')),
         textarea: Boolean(document.querySelector('#send_textarea')),
         viewport: `${window.innerWidth}x${window.innerHeight}`,
-        taskType: (() => {
-            try {
-                return taskType();
-            } catch {
-                return 'n/a';
-            }
-        })(),
+
         preferences: (settings().authorPreferences ?? []).length,
         imageEnabled: Boolean(settings().image?.enabled),
         imageAuto: settings().image?.auto ?? 'off',
@@ -208,7 +203,7 @@ export async function boot() {
         mountPanel();
         installInterceptor();
         wireEvents();
-        await refreshDialogueInjection(mode() === MODE.DIALOGUE);
+        await refreshDialogueInjection(mode());
         recordDiagnostics({ boot: 'ok' });
         globalThis.ttIfEnhancer = {
             setMode: next => import('./ui/toggle.js').then(module => module.setMode(next, { user: true })),

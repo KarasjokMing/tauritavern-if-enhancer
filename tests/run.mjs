@@ -17,7 +17,8 @@ import { buildEntries, normalizeGenerated, memoryEntriesFrom } from '../src/worl
 import { quickRoute, TASK } from '../src/core/router.js';
 import { parseJson, isProviderApiError } from '../src/core/llm.js';
 import { guessNameFromText } from '../src/core/edit.js';
-import { TASK_OPTIONS } from '../src/ui/toggle.js';
+import { MODE, MODE_LABEL } from '../src/ui/toggle.js';
+import { parsePath, applyStatPatch, flattenStatData, numericPaths } from '../src/core/mvu.js';
 import { sanitizeForSlash, composePrompt, composeNegative } from '../src/core/image.js';
 import { characterStructuredPrompt, CHARACTER_SCHEMA, looksLikeMetaReply } from '../src/prompts.js';
 import { mergeDefaults, DEFAULTS } from '../src/config.js';
@@ -328,14 +329,13 @@ test('元回复能被识别（真机实测：指令被当成正文时模型回�
     assert.equal(looksLikeMetaReply('x'.repeat(800)), false, '长文本不判为元回复');
 });
 
-test('界面任务类型选项与任务常量一致', () => {
-    const keys = TASK_OPTIONS.map(([key]) => key);
-    assert.ok(keys.includes('auto'));
-    assert.ok(keys.includes(TASK.PROSE_GENERATE));
-    assert.ok(keys.includes(TASK.CONFIG_ADJUST));
-    assert.ok(keys.includes(TASK.IMAGE_GENERATE));
-    assert.equal(new Set(keys).size, keys.length, '任务类型不重复');
-    assert.equal(keys[0], 'auto', '默认为自动判断');
+test('三种模式职责互不重叠', () => {
+    const modes = Object.values(MODE);
+    assert.deepEqual(modes.sort(), ['dialogue', 'edit', 'prose']);
+    assert.equal(new Set(modes).size, 3, '模式不重复');
+    for (const m of modes) assert.ok(MODE_LABEL[m], `缺少模式标签：${m}`);
+    // 演绎与编辑必须是两个不同入口（真机反馈要求分开）
+    assert.notEqual(MODE.PROSE, MODE.EDIT);
 });
 
 /* ------------------------------------------------------------ 自动配图 */
@@ -406,6 +406,29 @@ test('供应商拒绝结构化输出时能被识别（真机实测的 API 错误
     assert.equal(isProviderApiError('云压得极低，像一口倒扣的铁锅。'), false);
 });
 
+/* ------------------------------------------------------------ MVU 变量 */
+
+test('MVU 路径解析与按路径改值（含 delta 与新建路径）', () => {
+    assert.deepEqual(parsePath('后宫[0].好感'), ['后宫', '0', '好感']);
+    const stat = { 主角: { 魅力: 78 }, 后宫: [{ 姓名: '周皇后', 好感: 40 }] };
+    const next = applyStatPatch(stat, {
+        '主角.魅力': 90,
+        '后宫[0].好感': { delta: 15 },
+        '世界.当前时间': '崇祯元年十月二十七日',
+    });
+    assert.equal(next.主角.魅力, 90);
+    assert.equal(next.后宫[0].好感, 55);
+    assert.equal(next.世界.当前时间, '崇祯元年十月二十七日');
+    assert.equal(stat.主角.魅力, 78, '不得就地修改原变量');
+});
+
+test('MVU 变量拍平与数值路径提取', () => {
+    const stat = { 大明: { 国库: 300, 民心: 35 }, 后宫: [{ 好感: 40 }] };
+    const flat = flattenStatData(stat);
+    assert.ok(flat.some(item => item.path === '大明.国库' && item.value === 300));
+    assert.ok(flat.some(item => item.path === '后宫[0].好感'));
+    assert.deepEqual(numericPaths(stat), ['大明.国库', '大明.民心', '后宫[0].好感']);
+});
 /* ------------------------------------------------------------ 运行 */
 
 let passed = 0;

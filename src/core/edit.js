@@ -10,13 +10,14 @@
 import { settings, updateSettings } from '../config.js';
 import { toast } from '../env.js';
 import { routeInstruction, quickRoute, TASK, TASK_LABEL } from './router.js';
-import { generateText, generateObject, stripFence } from './llm.js';
+import { generateText, generateObject, generateNative, stripFence } from './llm.js';
 import { getMessages, renderHistory, appendMessages, replaceMessage, findLastMessage, currentCharName } from './chat.js';
 import { readMemory, summarize, applyCorrection, memoryContextText, resolveMemoryBook } from './memory.js';
 import { refreshDialogueInjection, setPerformanceGuidance } from './dialogue.js';
 import { generateSceneImage } from './image.js';
 import {
     PROSE_GENERATE,
+    BEAT_DIRECTIVE,
     proseRevisePrompt,
     proseContextBlock,
     characterPrompt,
@@ -69,13 +70,11 @@ async function currentBook() {
 /* ------------------------------------------------------------ 正文类任务 */
 
 async function handleProseGenerate(route, stage) {
-    stage?.('正在演绎剧情…');
-    const memory = await readMemory();
-    const context = proseContextBlock({ memory, recent: recentHistory(settings().edit.historyMessages) });
-    const raw = await generateText({
-        system: PROSE_GENERATE,
-        prompt: `${context}\n\n【作者要求】\n${route.instruction}`,
-    });
+    stage?.('正在按作者节拍演绎（走酒馆预设管线）…');
+    const beat = String(route.instruction ?? '').trim();
+    if (!beat) throw new Error('请写下这一轮要让故事发生什么');
+    // 走原生管线：预设、角色卡、世界书、历史全部生效，作者只给节拍。
+    const raw = await generateNative({ beat, directive: BEAT_DIRECTIVE });
     const text = stripFence(raw).trim();
     if (!text) throw new Error('模型没有返回正文内容');
     if (looksLikeMetaReply(text)) {
@@ -86,7 +85,7 @@ async function handleProseGenerate(route, stage) {
             title: '模型回了一段说明，没有写成正文（未写入聊天）',
             lines: [
                 '这次输出看起来是在向作者解释或索要资料，不是故事内容，因此没有写进聊天记录。',
-                '补充场景与在场人物后重试；若你本意是调整生成方式，请把任务类型选为「更改配置」。',
+                '可以换成明确的节拍（谁、在哪、发生什么）再试。',
             ],
             detail: text,
             warnings: [text.slice(0, 160)],
@@ -96,7 +95,7 @@ async function handleProseGenerate(route, stage) {
     return receipt({
         task: route.task,
         label: TASK_LABEL[route.task],
-        title: '已按作者要求演绎新剧情',
+        title: '已按节拍演绎（经预设管线）',
         lines: [`新增正文 ${text.length} 字`],
         detail: text.slice(0, 600),
     });

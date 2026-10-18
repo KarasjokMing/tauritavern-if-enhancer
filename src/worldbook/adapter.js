@@ -122,33 +122,37 @@ export function renderBookName(template, extra = {}) {
 /**
  * 解析应当写入的世界书名称。
  *
- * 只解析、**不创建**：读记忆这类只读操作不应产生副作用（真机实测会在 worlds/ 里
- * 留下一个空的世界书文件）。真正写入时由 writeEntries → ensureWorldbook 负责创建。
+ * 只解析、**不创建**：读记忆这类只读操作不应产生副作用。
+ *
+ * 优先级（真机反馈后调整）：
+ *   1. 手动指定
+ *   2. target=char / 默认情况：**角色卡绑定的世界书**（`extensions.world`）
+ *      —— 卡里的世界观、人物、规则本来就该写这里，而不是另建一本「聊天·互动小说」
+ *   3. target=global：全局世界书第一本
+ *   4. 已绑定聊天级世界书时用它
+ *   5. 兜底：按模板生成候选名（写入时才由 ensureWorldbook 创建）
  */
 export async function resolveTargetBook({ target, nameTemplate, autoCreate, primaryName } = {}) {
     const th = TH();
     const c = ctx();
     if (primaryName) return primaryName;
 
-    if (target === 'char') {
-        const bound = c?.characters?.[c.characterId]?.data?.extensions?.world;
-        if (bound) return bound;
-    }
+    const boundBook = c?.characters?.[c.characterId]?.data?.extensions?.world;
+    if (target !== 'global' && boundBook) return boundBook;
+
     if (target === 'global') {
         const names = th?.getGlobalWorldbookNames?.() ?? [];
         if (names.length) return names[0];
     }
-    // 默认：聊天级世界书。已经绑定就直接用；未绑定时返回候选名称，写入时再创建。
     if (th?.getChatWorldbookName) {
         const current = th.getChatWorldbookName('current');
         if (current) return current;
     }
     const wanted = renderBookName(nameTemplate);
     if (wanted && autoCreate !== false) return wanted;
-    const bound = c?.characters?.[c.characterId]?.data?.extensions?.world;
-    if (bound) return bound;
+    if (boundBook) return boundBook;
     if (wanted) return wanted;
-    throw new Error('无法确定目标世界书：请先在设置中选择或创建一个世界书');
+    throw new Error('无法确定目标世界书：请在设置中指定，或给当前角色卡绑定一本世界书');
 }
 
 /* ------------------------------------------------------------------ 读 */

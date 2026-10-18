@@ -99,6 +99,34 @@ export function parseJson(text, { fallback = null } = {}) {
 }
 
 /**
+ * 原生管线生成（演绎模式）：完全走酒馆当前的「预设 + 角色卡 + 世界书 + 历史」。
+ * 作者节拍作为最后一条用户消息；导演要求只作为 system 注入，不取代预设。
+ *
+ * 这是演绎模式的关键：此前的自制 prompt 绕过了预设与世界书，导致演绎与前文脱节。
+ */
+export async function generateNative({ beat, directive, silent = true }) {
+    const th = TH();
+    if (typeof th?.generate !== 'function') {
+        throw new Error('演绎模式需要酒馆助手（TavernHelper）提供原生生成管线');
+    }
+    return withSlot(async () => {
+        const injects = directive ? [{ role: 'system', content: directive, position: 'chat', depth: 0 }] : undefined;
+        try {
+            const result = await th.generate({ user_input: beat, injects, should_stream: false, should_silence: silent });
+            return typeof result === 'string' ? result : String(result?.content ?? '');
+        } catch (error) {
+            console.warn('[IF Enhancer] 原生 generate 不接受 injects，退化为拼接：', error?.message ?? error);
+            const result = await th.generate({
+                user_input: directive ? `${directive}\n\n${beat}` : beat,
+                should_stream: false,
+                should_silence: silent,
+            });
+            return typeof result === 'string' ? result : String(result?.content ?? '');
+        }
+    });
+}
+
+/**
  * 无酒馆助手时的原生回退：走 STscript /genraw（只用给定提示词，不叠加聊天上下文）。
  * 仅作保险，能力弱于酒馆助手通路。
  */
