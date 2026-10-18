@@ -31,6 +31,7 @@ import {
     WORLDBOOK_ENTRY_SCHEMA,
     performancePrompt,
     looksLikeMetaReply,
+    stripMetaPreamble,
 } from '../prompts.js';
 import { buildEntries, describeWrite } from '../worldbook/builder.js';
 import { writeEntries, readWorldbook, resolveTargetBook } from '../worldbook/adapter.js';
@@ -79,7 +80,7 @@ async function handleProseGenerate(route, stage) {
     if (!beat) throw new Error('请写下这一轮要让故事发生什么');
     // 走原生管线：预设、角色卡、世界书、历史全部生效，作者只给节拍。
     const raw = await generateNative({ beat, directive: BEAT_DIRECTIVE });
-    const text = stripFence(raw).trim();
+    const text = stripMetaPreamble(stripFence(raw).trim());
     if (!text) throw new Error('模型没有返回正文内容');
     if (looksLikeMetaReply(text)) {
         return receipt({
@@ -114,7 +115,7 @@ async function handleProseRevise(route, stage) {
         system: PROSE_GENERATE,
         prompt: proseRevisePrompt({ original, instruction: route.instruction }),
     });
-    const text = stripFence(raw).trim();
+    const text = stripMetaPreamble(stripFence(raw).trim());
     if (!text) throw new Error('模型没有返回修订后的正文');
     if (looksLikeMetaReply(text)) {
         return receipt({

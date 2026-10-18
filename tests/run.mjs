@@ -20,7 +20,7 @@ import { guessNameFromText } from '../src/core/edit.js';
 import { MODE, MODE_LABEL } from '../src/ui/toggle.js';
 import { parsePath, applyStatPatch, flattenStatData, numericPaths } from '../src/core/mvu.js';
 import { sanitizeForSlash, composePrompt, composeNegative } from '../src/core/image.js';
-import { characterStructuredPrompt, CHARACTER_SCHEMA, looksLikeMetaReply } from '../src/prompts.js';
+import { characterStructuredPrompt, CHARACTER_SCHEMA, looksLikeMetaReply, stripMetaPreamble } from '../src/prompts.js';
 import { mergeDefaults, migrateSettings, DEFAULTS } from '../src/config.js';
 
 const cases = [];
@@ -416,6 +416,12 @@ test('设置迁移：v1 的写入目标改为角色卡绑定世界书', () => {
     migrateSettings(pinned);
     assert.equal(pinned.worldbook.target, 'chat', '用户手动指定世界书时不动目标');
     assert.equal(migrateSettings({ version: DEFAULTS.version }), false, '已是当前版本不再迁移');
+});
+test('剥掉正文开头的元回复引导句（真机实测：预设习惯）', () => {
+    assert.equal(stripMetaPreamble('好的，这是你需求的最终输出：\n\n殿里静得很。'), '殿里静得很。');
+    assert.equal(stripMetaPreamble('以下是正文：\n\n黄立极出列。'), '黄立极出列。');
+    assert.equal(stripMetaPreamble('【最终输出】\n\n日头爬上檐角。'), '日头爬上檐角。');
+    assert.equal(stripMetaPreamble('殿里静得很。'), '殿里静得很。', '正常正文不得被改动');
 });
 /* ------------------------------------------------------------ MVU 变量 */
 

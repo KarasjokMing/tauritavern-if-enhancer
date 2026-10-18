@@ -157,6 +157,29 @@ export function looksLikeMetaReply(text) {
     return META_REPLY_PATTERNS.some(pattern => pattern.test(value));
 }
 
+/**
+ * 剥掉正文开头的"元回复引导句"。
+ * 真机实测（多子多福-明末 + 该预设）：正文很完整，但开头带一句
+ * 「好的，这是你需求的最终输出：」——这是模型/预设的习惯，剥掉不影响内容。
+ */
+const PREAMBLE_PATTERNS = [
+    /^\s*(好的|好|明白|收到|没问题)[，,。、]?\s*(这是|以下是|下面是)[^\n]{0,40}(输出|结果|正文|答复|内容)[：:]\s*\n+/u,
+    /^\s*(这是|以下是|下面是)[^\n]{0,20}(最终输出|输出|结果|正文)[：:]\s*\n+/u,
+    /^\s*【?(最终输出|输出|正文)】?\s*[：:]?\s*\n+/u,
+];
+
+export function stripMetaPreamble(text) {
+    let out = String(text ?? '').trim();
+    for (let i = 0; i < 3; i += 1) {
+        let next = out;
+        for (const pattern of PREAMBLE_PATTERNS) next = next.replace(pattern, '');
+        next = next.trim();
+        if (next === out) break;
+        out = next;
+    }
+    return out;
+}
+
 /** 编辑模式：正文修订。 */
 export function proseRevisePrompt({ original, instruction }) {
     return `以下是已生成的故事正文，请按作者要求修改。
